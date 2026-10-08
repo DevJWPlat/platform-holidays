@@ -1,0 +1,12 @@
+{
+  "name": "platform-holidays",
+  "private": true,
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "npm --workspace @platform/holidays-web run dev",
+    "build": "npm --workspace @platform/holidays-web run build",
+    "test": "npm --workspace @platform/holidays-web run test"
+  }
+}

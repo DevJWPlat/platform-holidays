@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--pf-font-sans);
+
+  --color-platform-background: var(--pf-color-background);
+  --color-platform-raised: var(--pf-color-background-raised);
+  --color-platform-surface: var(--pf-color-surface);
+  --color-platform-surface-hover: var(--pf-color-surface-hover);
+  --color-platform-border: var(--pf-color-border);
+  --color-platform-border-strong: var(--pf-color-border-strong);
+
+  --color-platform-text: var(--pf-color-text);
+  --color-platform-muted: var(--pf-color-text-muted);
+  --color-platform-subtle: var(--pf-color-text-subtle);
+
+  --color-platform-accent: var(--pf-color-accent);
+  --color-platform-accent-hover: var(--pf-color-accent-hover);
+  --color-platform-accent-contrast: var(--pf-color-accent-contrast);
+
+  --color-platform-success: var(--pf-color-success);
+  --color-platform-warning: var(--pf-color-warning);
+  --color-platform-danger: var(--pf-color-danger);
+  --color-platform-focus: var(--pf-color-focus);
+}

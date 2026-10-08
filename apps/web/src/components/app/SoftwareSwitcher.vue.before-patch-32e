@@ -1,0 +1,41 @@
+<script setup>
+import { faGrip } from '@fortawesome/free-solid-svg-icons'
+
+defineProps({
+  open: {
+    type: Boolean,
+    default: false,
+  },
+})
+</script>
+
+<template>
+  <Transition name="app-switcher">
+    <div
+      v-if="open"
+      class="software-switcher"
+      role="menu"
+    >
+      <p class="software-switcher__label">Platform software</p>
+
+      <a
+        href="https://tools.platform.team"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="software-switcher__item"
+        role="menuitem"
+      >
+        <FontAwesomeIcon :icon="faGrip" />
+        <span>Platform Tools</span>
+      </a>
+    </div>
+  </Transition>
+</template>
+
+<style scoped>
+/* Patch 32D — open switcher to the left */
+.software-switcher__menu {
+  left: auto !important;
+  right: 0 !important;
+}
+</style>

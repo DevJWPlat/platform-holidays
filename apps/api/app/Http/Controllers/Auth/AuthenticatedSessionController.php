@@ -1,0 +1,63 @@
+<?php
+
+namespace App\Http\Controllers\Auth;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Auth\LoginRequest;
+use App\Http\Resources\CurrentUserResource;
+use App\Models\User;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
+
+class AuthenticatedSessionController extends Controller
+{
+    public function store(LoginRequest $request): JsonResponse
+    {
+        $credentials = $request->safe()->only(['email', 'password']);
+
+        if (! Auth::attempt($credentials, $request->boolean('remember'))) {
+            throw ValidationException::withMessages([
+                'email' => ['The email address or password is incorrect.'],
+            ]);
+        }
+
+        $request->session()->regenerate();
+
+        /** @var User $user */
+        $user = $request->user();
+
+        if ($user->is_archived) {
+            Auth::guard('web')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            throw ValidationException::withMessages([
+                'email' => ['This account is archived and cannot sign in.'],
+            ]);
+        }
+
+        $user->forceFill([
+            'last_login_at' => now(),
+        ])->save();
+
+        return response()->json([
+            'data' => new CurrentUserResource(
+                $user->load(['organisation', 'departments'])
+            ),
+        ]);
+    }
+
+    public function destroy(Request $request): JsonResponse
+    {
+        Auth::guard('web')->logout();
+
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return response()->json([
+            'message' => 'Signed out.',
+        ]);
+    }
+}
