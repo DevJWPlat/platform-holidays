@@ -123,4 +123,27 @@ class DepartmentController extends Controller
 
         $department->users()->sync($sync);
     }
+
+
+    public function destroy(Request $request, Department $department)
+    {
+        abort_unless(
+            (int) $department->organisation_id === (int) $request->user()->organisation_id,
+            404
+        );
+
+        abort_unless(
+            $request->user()->isAdministrator()
+                || $request->user()->isDepartmentManager(),
+            403
+        );
+
+        $department->users()->detach();
+        $department->is_active = false;
+        $department->save();
+
+        return response()->json([
+            'message' => 'Department deleted.',
+        ]);
+    }
 }

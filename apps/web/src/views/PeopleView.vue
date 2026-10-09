@@ -35,6 +35,8 @@ const departmentForm = ref({
   member_ids: [],
 })
 const savingDepartment = ref(false)
+const deletingDepartment = ref(false)
+const confirmDeleteDepartment = ref(false)
 const loading = ref(true)
 const error = ref('')
 const search = ref('')
@@ -155,6 +157,7 @@ async function loadPeople() {
 
 function openDepartmentModal(department = null) {
   editingDepartment.value = department
+  confirmDeleteDepartment.value = false
 
   departmentForm.value = {
     name: department?.name || '',
@@ -166,10 +169,11 @@ function openDepartmentModal(department = null) {
   departmentModalOpen.value = true
 }
 
-function closeDepartmentModal() {
-  if (savingDepartment.value) return
+function closeDepartmentModal(force = false) {
+  if (!force && (savingDepartment.value || deletingDepartment.value)) return
   departmentModalOpen.value = false
   editingDepartment.value = null
+  confirmDeleteDepartment.value = false
 }
 
 async function saveDepartment() {
@@ -197,7 +201,8 @@ async function saveDepartment() {
       await api.post('/api/v1/departments', payload)
     }
 
-    closeDepartmentModal()
+    savingDepartment.value = false
+    closeDepartmentModal(true)
     await loadPeople()
   } catch (requestError) {
     const errors = requestError.response?.data?.errors
@@ -206,6 +211,34 @@ async function saveDepartment() {
       : requestError.response?.data?.message || 'Could not save department.'
   } finally {
     savingDepartment.value = false
+  }
+}
+
+async function deleteDepartment() {
+  if (!editingDepartment.value || deletingDepartment.value) return
+
+  if (!confirmDeleteDepartment.value) {
+    confirmDeleteDepartment.value = true
+    return
+  }
+
+  deletingDepartment.value = true
+  error.value = ''
+
+  try {
+    await initialiseCsrf()
+    await api.delete(`/api/v1/departments/${editingDepartment.value.id}`)
+
+    deletingDepartment.value = false
+    closeDepartmentModal(true)
+    await loadPeople()
+  } catch (requestError) {
+    const errors = requestError.response?.data?.errors
+    error.value = errors
+      ? Object.values(errors).flat()[0]
+      : requestError.response?.data?.message || 'Could not delete department.'
+  } finally {
+    deletingDepartment.value = false
   }
 }
 
@@ -639,19 +672,42 @@ onMounted(loadPeople)
               </div>
             </div>
 
-            <footer>
-              <button class="button button--secondary" type="button" @click="closeDepartmentModal">
-                Cancel
+            <footer class="department-modal__footer">
+              <button
+                v-if="editingDepartment"
+                class="button button--danger department-delete-button"
+                type="button"
+                :disabled="savingDepartment || deletingDepartment"
+                @click="deleteDepartment"
+              >
+                {{
+                  deletingDepartment
+                    ? 'Deleting…'
+                    : confirmDeleteDepartment
+                      ? 'Confirm delete'
+                      : 'Delete department'
+                }}
               </button>
 
-              <button
-                class="button button--primary"
-                type="button"
-                :disabled="savingDepartment || !departmentForm.name.trim()"
-                @click="saveDepartment"
-              >
-                {{ savingDepartment ? 'Saving…' : 'Save department' }}
-              </button>
+              <div class="department-modal__footer-actions">
+                <button
+                  class="button button--secondary"
+                  type="button"
+                  :disabled="savingDepartment || deletingDepartment"
+                  @click="closeDepartmentModal"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  class="button button--primary"
+                  type="button"
+                  :disabled="savingDepartment || deletingDepartment || !departmentForm.name.trim()"
+                  @click="saveDepartment"
+                >
+                  {{ savingDepartment ? 'Saving…' : 'Save department' }}
+                </button>
+              </div>
             </footer>
           </section>
         </div>
@@ -1913,4 +1969,48 @@ onMounted(loadPeople)
   border-color: #555;
 }
 
+
+
+.department-modal__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.department-modal__footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.button--danger {
+  border: 1px solid #8f3f32;
+  background: transparent;
+  color: #ef765f;
+}
+
+.button--danger:hover:not(:disabled) {
+  border-color: #ef5b3f;
+  background: rgba(239, 91, 63, 0.08);
+  color: #ef5b3f;
+}
+
+@media (max-width: 640px) {
+  .department-modal__footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .department-modal__footer-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .department-modal__footer-actions .button,
+  .department-delete-button {
+    flex: 1;
+  }
+}
 </style>

@@ -69,6 +69,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/departments', [DepartmentController::class, 'index']);
         Route::post('/departments', [DepartmentController::class, 'store']);
         Route::put('/departments/{department}', [DepartmentController::class, 'update']);
+        Route::delete('/departments/{department}', [DepartmentController::class, 'destroy']);
         Route::get('/leave-types', [LeaveTypeController::class, 'index']);
         Route::post('/leave-types', [LeaveTypeController::class, 'store']);
         Route::put('/leave-types/{leaveType}', [LeaveTypeController::class, 'update']);
