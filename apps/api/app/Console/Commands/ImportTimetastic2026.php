@@ -23,7 +23,7 @@ class ImportTimetastic2026 extends Command
 
     public function handle(AllowanceService $allowanceService): int
     {
-        $path = storage_path('app/imports/timetastic-2026-approved.json');
+        $path = database_path('imports/timetastic-2026-approved.json');
 
         if (! is_file($path)) {
             $this->error('Import data file not found: ' . $path);
