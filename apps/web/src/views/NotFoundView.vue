@@ -58,18 +58,15 @@ function goBack() {
 }
 
 .not-found-card {
-  display: grid;
-  width: min(720px, 100%);
-  grid-template-columns: 180px minmax(0, 1fr);
+  display: flex;
+  width: min(680px, 100%);
+  flex-direction: column;
   border: 1px solid #2b2b2b;
   background: #121212;
 }
 
 .not-found-card__code {
-  display: grid;
-  min-height: 300px;
-  place-items: center;
-  border-right: 1px solid #2b2b2b;
+  padding: 28px 44px 18px;
   color: #ef5b3f;
   font-size: 72px;
   font-weight: 800;
@@ -79,12 +76,11 @@ function goBack() {
 .not-found-card__content {
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  padding: 44px;
+  padding: 0px 44px 32px;
 }
 
 .not-found-card__content .eyebrow {
-  margin: 0 0 12px;
+  margin: 0 0 8px;
 }
 
 .not-found-card__content h1 {
@@ -97,7 +93,7 @@ function goBack() {
 
 .not-found-card__content > p:not(.eyebrow) {
   max-width: 430px;
-  margin: 18px 0 0;
+  margin: 10px 0 0;
   color: #8b8782;
   font-size: 14px;
   line-height: 1.65;
@@ -107,7 +103,7 @@ function goBack() {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  margin-top: 30px;
+  margin-top: 20px;
 }
 
 .not-found-card__home {
@@ -120,19 +116,13 @@ function goBack() {
     padding: 28px 0;
   }
 
-  .not-found-card {
-    grid-template-columns: 1fr;
-  }
-
   .not-found-card__code {
-    min-height: 130px;
-    border-right: 0;
-    border-bottom: 1px solid #2b2b2b;
+    padding: 22px 22px 14px;
     font-size: 54px;
   }
 
   .not-found-card__content {
-    padding: 28px 22px;
+    padding: 20px 22px 24px;
   }
 
   .not-found-card__actions {
