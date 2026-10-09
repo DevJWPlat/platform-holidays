@@ -71,6 +71,7 @@ class ImportTimetastic2026 extends Command
         $missingTypes = [];
         $preview = [];
         $duplicateCount = 0;
+        $skippedFestiveBreak = 0;
 
         foreach ($rows as $row) {
             $userKey = $this->normalise((string) ($row['user_name'] ?? ''));
@@ -82,6 +83,12 @@ class ImportTimetastic2026 extends Command
             }
 
             $typeKey = $this->normalise((string) ($row['leave_type'] ?? ''));
+
+            if ($typeKey === 'festive break') {
+                $skippedFestiveBreak++;
+                continue;
+            }
+
             $candidates = $typeAliases[$typeKey] ?? [$typeKey];
 
             $leaveType = null;
@@ -120,6 +127,7 @@ class ImportTimetastic2026 extends Command
         $this->line('Approved rows in bundled file: ' . count($rows));
         $this->line('Ready to import: ' . count($preview));
         $this->line('Already imported/skipped as duplicates: ' . $duplicateCount);
+        $this->line('Festive break rows skipped as company closure: ' . $skippedFestiveBreak);
         $this->line('Cancelled rows omitted from bundled file: 45');
 
         if ($missingUsers) {
