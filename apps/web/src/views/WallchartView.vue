@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
+  faCakeCandles,
   faCalendarDay,
   faChevronDown,
   faChevronLeft,
@@ -224,6 +225,16 @@ const peopleMeta = computed(() => {
 
   return `${total} ${total === 1 ? 'person' : 'people'}`
 })
+
+function isBirthdayForPerson(person, day) {
+  if (!person?.date_of_birth || !day) return false
+
+  return String(person.date_of_birth).slice(5, 10) === String(day).slice(5, 10)
+}
+
+function birthdayTitle(person) {
+  return person?.name ? `${person.name}'s birthday` : 'Birthday'
+}
 
 function requestsForCell(personId, day) {
   return leaveRequests.value.filter((item) => {
@@ -855,6 +866,7 @@ onBeforeUnmount(() => {
                     'wallchart-grid-cell--weekend': date.weekend,
                     'wallchart-grid-cell--today': date.today,
                     'wallchart-grid-cell--bank-holiday': isBankHoliday(date.key),
+                    'wallchart-grid-cell--birthday': isBirthdayForPerson(person, date.key),
 }"
                 >
                 <div
@@ -883,6 +895,14 @@ onBeforeUnmount(() => {
                     'wallchart-grid-cell--bank-holiday': isBankHoliday(date.key),
 }"
                 >
+                  <div
+                    v-if="isBirthdayForPerson(person, date.key)"
+                    class="wallchart-birthday"
+                    :title="birthdayTitle(person)"
+                  >
+                    <FontAwesomeIcon :icon="faCakeCandles" />
+                  </div>
+
                   <button
                     v-for="item in requestsForCell(person.id, date.key)"
                     :key="`${item.id}-${date.key}`"
@@ -939,6 +959,10 @@ onBeforeUnmount(() => {
         <span>
           <i class="wallchart-legend__sample wallchart-legend__sample--bank-holiday" />
           Bank holiday
+        </span>
+        <span>
+          <i class="wallchart-legend__sample wallchart-legend__sample--birthday" />
+          Birthday
         </span>
         <span class="wallchart-legend__hint">
           Drag the calendar left or right to move across the visible dates.
@@ -1828,4 +1852,36 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+
+
+/* Patch 39 — recurring staff birthdays */
+.wallchart-grid-cell--birthday {
+  position: relative;
+}
+
+.wallchart-birthday {
+  position: absolute;
+  z-index: 4;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(239, 91, 63, 0.55);
+  background: #201310;
+  color: #ef5b3f;
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.wallchart-grid-cell--birthday .wallchart-leave {
+  z-index: 5;
+}
+
+.wallchart-legend__sample--birthday {
+  border: 1px solid rgba(239, 91, 63, 0.55);
+  background: #201310;
+}
 </style>

@@ -2,6 +2,7 @@
 const bankHolidayMap = ref({})
 import { computed, onMounted, ref, watch } from 'vue'
 import {
+  faCakeCandles,
   faCalendarDay,
   faChevronLeft,
   faChevronRight,
@@ -23,6 +24,7 @@ const props = defineProps({
 defineEmits(['book-time-off'])
 
 const requests = ref([])
+const people = ref([])
 const allowance = ref(null)
 const loading = ref(true)
 const error = ref('')
@@ -268,6 +270,20 @@ const pendingDays = computed(() =>
     .reduce((total, item) => total + Number(item.duration_days || 0), 0),
 )
 
+function birthdaysForDay(day) {
+  const monthDay = String(day || '').slice(5, 10)
+  if (!monthDay) return []
+
+  return people.value.filter(
+    (person) => person?.date_of_birth
+      && String(person.date_of_birth).slice(5, 10) === monthDay,
+  )
+}
+
+function birthdayNames(day) {
+  return birthdaysForDay(day).map((person) => person.name).join(', ')
+}
+
 function requestsForDay(day) {
   return activeRequests.value.filter(
     (item) => day >= item.starts_on && day <= item.ends_on,
@@ -307,17 +323,19 @@ async function loadData() {
   error.value = ''
 
   try {
-    const [requestsResponse, allowanceResponse] = await Promise.all([
+    const [requestsResponse, allowanceResponse, peopleResponse] = await Promise.all([
       api.get('/api/v1/leave-requests'),
       api.get('/api/v1/allowance', {
         params: {
           date: dateKey(currentMonth.value),
         },
       }),
+      api.get('/api/v1/people'),
     ])
 
     requests.value = requestsResponse.data?.data || []
     allowance.value = allowanceResponse.data?.data || null
+    people.value = peopleResponse.data?.data || []
   } catch (requestError) {
     console.error(requestError)
     error.value = 'Could not load your calendar.'
@@ -671,6 +689,16 @@ onMounted(loadBankHolidays)
             </div>
 
             <div class="calendar-day__leave">
+              <div
+                v-for="person in birthdaysForDay(day.key)"
+                :key="`birthday-${person.id}-${day.key}`"
+                class="calendar-birthday-event"
+                :title="`${person.name}'s birthday`"
+              >
+                <FontAwesomeIcon :icon="faCakeCandles" />
+                <span>{{ person.name }}</span>
+              </div>
+
               <button
                 v-for="item in requestsForDay(day.key)"
                 :key="`${item.id}-${day.key}`"
@@ -725,6 +753,7 @@ onMounted(loadBankHolidays)
                     'year-day--weekend': day.weekend,
                     'year-day--today': day.today,
                     'year-day--bank-holiday': isBankHoliday(day.key),
+                    'year-day--birthday': birthdaysForDay(day.key).length,
                     'year-day--leave': requestsForDay(day.key).length,
                     'year-day--pending': requestsForDay(day.key).some((item) => item.status === 'pending'),
                   }"
@@ -737,7 +766,7 @@ onMounted(loadBankHolidays)
                       }
                     : undefined"
                   type="button"
-                  :title="requestsForDay(day.key)[0]?.leave_type?.label || bankHolidayTitle(day.key)"
+                  :title="requestsForDay(day.key)[0]?.leave_type?.label || (birthdaysForDay(day.key).length ? `Birthday: ${birthdayNames(day.key)}` : bankHolidayTitle(day.key))"
                   @click="requestsForDay(day.key)[0] && openRequest(requestsForDay(day.key)[0])"
                 >
                   <span>{{ day.day }}</span>
@@ -746,6 +775,12 @@ onMounted(loadBankHolidays)
                     v-if="requestsForDay(day.key)[0]"
                     class="year-day__icon"
                     :icon="getLeaveTypeIcon(requestsForDay(day.key)[0].leave_type?.icon)"
+                  />
+
+                  <FontAwesomeIcon
+                    v-else-if="birthdaysForDay(day.key).length"
+                    class="year-day__birthday-icon"
+                    :icon="faCakeCandles"
                   />
 
                   <span
@@ -1896,4 +1931,54 @@ onMounted(loadBankHolidays)
   color: inherit;
 }
 
+
+
+/* Patch 39 — recurring staff birthdays */
+.calendar-birthday-event {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 6px;
+  border: 1px solid rgba(239, 91, 63, 0.48);
+  background: #201310;
+  color: #ef765f;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.calendar-birthday-event svg {
+  flex: 0 0 auto;
+  font-size: 9px;
+}
+
+.calendar-birthday-event span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.year-day--birthday:not(.year-day--leave) {
+  background: #201310;
+  color: #ef765f;
+  cursor: default;
+}
+
+.year-day__birthday-icon {
+  color: #ef5b3f;
+  font-size: 10px;
+}
+
+@media (max-width: 680px) {
+  .calendar-birthday-event {
+    min-height: 18px;
+    padding: 0 3px;
+    font-size: 7px;
+  }
+
+  .calendar-birthday-event svg {
+    display: none;
+  }
+}
 </style>
