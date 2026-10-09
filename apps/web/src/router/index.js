@@ -8,6 +8,7 @@ import ReportsView from '@/views/ReportsView.vue'
 import PeopleView from '@/views/PeopleView.vue'
 import SettingsView from '@/views/SettingsView.vue'
 import LoginView from '@/views/LoginView.vue'
+import NotFoundView from '@/views/NotFoundView.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const routes = [
@@ -62,6 +63,12 @@ const routes = [
         name: 'settings',
         component: SettingsView,
         meta: { title: 'Settings' },
+      },
+      {
+        path: ':pathMatch(.*)*',
+        name: 'not-found',
+        component: NotFoundView,
+        meta: { title: 'Page not found' },
       },
     ],
   },
