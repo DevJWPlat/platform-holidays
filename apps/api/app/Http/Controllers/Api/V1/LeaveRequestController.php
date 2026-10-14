@@ -378,6 +378,52 @@ class LeaveRequestController extends Controller
         ]);
     }
 
+    public function adminDestroy(
+        Request $request,
+        LeaveRequest $leaveRequest,
+    ): JsonResponse {
+        $viewer = $request->user();
+
+        abort_unless($viewer->isAdministrator(), 403);
+
+        $leaveRequest->loadMissing(['user', 'leaveType']);
+
+        abort_unless(
+            (int) $leaveRequest->user?->organisation_id === (int) $viewer->organisation_id,
+            404,
+        );
+
+        if ($leaveRequest->group_booking_id) {
+            throw ValidationException::withMessages([
+                'group_booking' => [
+                    'This belongs to a group booking. Remove the whole group booking instead.',
+                ],
+            ]);
+        }
+
+        if (! in_array($leaveRequest->status, [
+            LeaveRequest::STATUS_PENDING,
+            LeaveRequest::STATUS_APPROVED,
+        ], true)) {
+            throw ValidationException::withMessages([
+                'status' => ['This booking has already been removed.'],
+            ]);
+        }
+
+        DB::transaction(function () use ($leaveRequest) {
+            $leaveRequest->forceFill([
+                'status' => LeaveRequest::STATUS_CANCELLED,
+                'cancelled_at' => now(),
+            ])->save();
+
+            $this->reverseAllowance($leaveRequest, 'Booking removed by administrator');
+        });
+
+        return response()->json([
+            'message' => 'Booking removed.',
+        ]);
+    }
+
     public function cancel(Request $request, LeaveRequest $leaveRequest): JsonResponse
     {
         $user = $request->user();

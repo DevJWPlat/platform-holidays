@@ -11,6 +11,7 @@ class LeaveRequestResource extends JsonResource
     {
         return [
             'id' => $this->id,
+            'group_booking_id' => $this->group_booking_id,
             'status' => $this->status,
             'starts_on' => $this->starts_on?->toDateString(),
             'start_session' => $this->start_session,

@@ -51,7 +51,7 @@ class AllowanceService
             'service_increment_enabled' => true,
             'service_increment_days' => 1,
             'service_increment_after_years' => 1,
-            'maximum_allowance_days' => null,
+            'maximum_allowance_days' => 30,
             'carry_over_enabled' => true,
             'maximum_carry_over_days' => null,
         ], $value);
@@ -63,50 +63,77 @@ class AllowanceService
         $year = $this->leaveYearFor($organisation, $anchor);
         $policy = $this->policy($organisation);
 
-        $baseAllowanceDays = $user->holiday_allowance_override_days !== null
+        $automaticMaximumDays = 30.0;
+
+        $contractedAnnualDays = $user->holiday_allowance_override_days !== null
             ? (float) $user->holiday_allowance_override_days
             : (float) $policy['base_allowance_days'];
 
-        $baseMinutes = $this->daysToMinutes($baseAllowanceDays);
+        $baseAllowanceDays = $contractedAnnualDays;
+        $serviceIncrementDays = 0.0;
+        $serviceIncrementYears = 0;
+        $firstIncrementYear = null;
+        $isNewStarterYear = false;
+        $newStarterCalendarDays = null;
 
-        $serviceMinutes = 0;
-        $completedServiceYears = 0;
-
-        if (
-            (bool) $policy['service_increment_enabled']
-            && $user->employment_start_date
-        ) {
-            $serviceDate = CarbonImmutable::parse(
+        $serviceDate = $user->employment_start_date
+            ? CarbonImmutable::parse(
                 $user->employment_start_date->toDateString(),
                 $organisation->timezone ?: 'Europe/London',
+            )->startOfDay()
+            : null;
+
+        if (
+            $serviceDate
+            && $serviceDate->greaterThanOrEqualTo($year['start'])
+            && $serviceDate->lessThanOrEqualTo($year['end'])
+        ) {
+            $isNewStarterYear = true;
+            $newStarterCalendarDays = $serviceDate->diffInDays($year['end']) + 1;
+
+            $calculatedNewStarterDays = (float) ceil(
+                ($contractedAnnualDays / 365) * $newStarterCalendarDays,
             );
 
-            if ($year['start']->greaterThanOrEqualTo($serviceDate)) {
-                $completedServiceYears = max(
-                    0,
-                    $serviceDate->diffInYears($year['start']),
-                );
-            }
+            $baseAllowanceDays = $user->new_starter_allowance_override_days !== null
+                ? (float) $user->new_starter_allowance_override_days
+                : $calculatedNewStarterDays;
+        }
 
-            $threshold = max(0, (int) $policy['service_increment_after_years']);
+        if (
+            ! $isNewStarterYear
+            && (bool) $policy['service_increment_enabled']
+            && $serviceDate
+        ) {
+            $firstIncrementYear = $user->service_increment_start_year !== null
+                ? (int) $user->service_increment_start_year
+                : ((int) $serviceDate->year + max(
+                    1,
+                    (int) ($policy['service_increment_after_years'] ?? 1),
+                ));
 
-            if ($completedServiceYears >= $threshold) {
-                $serviceMinutes = $this->daysToMinutes(
-                    (float) $policy['service_increment_days'],
-                );
+            $leaveYearNumber = (int) $year['start']->year;
+
+            if ($leaveYearNumber >= $firstIncrementYear) {
+                $serviceIncrementYears = ($leaveYearNumber - $firstIncrementYear) + 1;
+                $serviceIncrementDays =
+                    $serviceIncrementYears * (float) $policy['service_increment_days'];
             }
         }
 
-        $maxDays = $policy['maximum_allowance_days'];
-
-        if ($maxDays !== null && $maxDays !== '') {
-            $maxMinutes = $this->daysToMinutes((float) $maxDays);
-
-            if (($baseMinutes + $serviceMinutes) > $maxMinutes) {
-                $serviceMinutes = max(0, $maxMinutes - $baseMinutes);
-                $baseMinutes = min($baseMinutes, $maxMinutes);
-            }
+        // Manual/custom annual entitlement can exceed 30.
+        // The automatic yearly +1 cannot take automatic entitlement above 30.
+        if ($contractedAnnualDays >= $automaticMaximumDays) {
+            $serviceIncrementDays = 0.0;
+        } else {
+            $serviceIncrementDays = min(
+                $serviceIncrementDays,
+                max(0.0, $automaticMaximumDays - $baseAllowanceDays),
+            );
         }
+
+        $baseMinutes = $this->daysToMinutes($baseAllowanceDays);
+        $serviceMinutes = $this->daysToMinutes($serviceIncrementDays);
 
         $this->upsertSystemEntry(
             user: $user,
@@ -114,11 +141,27 @@ class AllowanceService
             type: AllowanceLedgerEntry::TYPE_BASE_GRANT,
             minutes: $baseMinutes,
             sourceKey: 'base-grant',
-            note: 'Annual holiday allowance',
+            note: $isNewStarterYear
+                ? 'Pro-rata new starter holiday allowance'
+                : 'Annual holiday allowance',
             metadata: [
                 'base_allowance_days' => $baseAllowanceDays,
+                'contracted_annual_days' => $contractedAnnualDays,
                 'organisation_default_days' => (float) $policy['base_allowance_days'],
                 'uses_person_override' => $user->holiday_allowance_override_days !== null,
+                'is_new_starter_year' => $isNewStarterYear,
+                'new_starter_calendar_days' => $newStarterCalendarDays,
+                'new_starter_allowance_override_days' =>
+                    $user->new_starter_allowance_override_days !== null
+                        ? (float) $user->new_starter_allowance_override_days
+                        : null,
+                'new_starter_formula' => $isNewStarterYear
+                    ? sprintf(
+                        'ceil((%s / 365) * %d)',
+                        $contractedAnnualDays,
+                        $newStarterCalendarDays,
+                    )
+                    : null,
             ],
         );
 
@@ -131,8 +174,12 @@ class AllowanceService
                 sourceKey: 'service-increment',
                 note: 'Annual service allowance increase',
                 metadata: [
-                    'completed_service_years' => $completedServiceYears,
-                    'service_increment_days' => (float) $policy['service_increment_days'],
+                    'first_increment_year' => $firstIncrementYear,
+                    'increment_years' => $serviceIncrementYears,
+                    'service_increment_days_per_year' =>
+                        (float) $policy['service_increment_days'],
+                    'service_increment_days_total' => $serviceIncrementDays,
+                    'automatic_maximum_days' => $automaticMaximumDays,
                 ],
             );
         } else {

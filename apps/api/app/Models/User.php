@@ -34,6 +34,8 @@ class User extends Authenticatable
             'password' => 'hashed',
             'employment_start_date' => 'date',
             'holiday_allowance_override_days' => 'decimal:2',
+            'service_increment_start_year' => 'integer',
+            'new_starter_allowance_override_days' => 'decimal:2',
             'carry_over_override' => 'boolean',
             'carry_over_max_days_override' => 'integer',
             'leaving_date' => 'date',

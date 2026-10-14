@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\V1\AllowanceAdjustmentController;
 use App\Http\Controllers\Api\V1\HolidayPolicyController;
 use App\Http\Controllers\Api\V1\ApproverAssignmentController;
 use App\Http\Controllers\Api\V1\DepartmentController;
+use App\Http\Controllers\Api\V1\GroupBookingController;
 use App\Http\Controllers\Api\V1\LeaveRequestController;
 use App\Http\Controllers\Api\V1\ManualLeaveController;
 use App\Http\Controllers\Api\V1\LeaveTypeController;
@@ -89,6 +90,10 @@ Route::middleware('auth')->group(function () {
         Route::get('/people/{person}/allowance', [AllowanceAdjustmentController::class, 'show']);
         Route::post('/people/{person}/allowance/adjustments', [AllowanceAdjustmentController::class, 'store']);
         Route::get('/reports', [ReportsController::class, 'index']);
+        Route::get('/group-bookings', [GroupBookingController::class, 'index']);
+        Route::post('/group-bookings', [GroupBookingController::class, 'store']);
+        Route::delete('/group-bookings/{groupBooking}', [GroupBookingController::class, 'destroy']);
+
         Route::get('/leave-requests', [LeaveRequestController::class, 'index']);
         Route::post('/leave-requests/manual/preview', [ManualLeaveController::class, 'preview']);
         Route::post('/leave-requests/manual', [ManualLeaveController::class, 'store']);
@@ -98,6 +103,7 @@ Route::middleware('auth')->group(function () {
         Route::post('/leave-requests/{leaveRequest}/approve', [LeaveRequestController::class, 'approve']);
         Route::post('/leave-requests/{leaveRequest}/reject', [LeaveRequestController::class, 'reject']);
         Route::post('/leave-requests/{leaveRequest}/cancel', [LeaveRequestController::class, 'cancel']);
+        Route::delete('/leave-requests/{leaveRequest}', [LeaveRequestController::class, 'adminDestroy']);
     });
 
     Route::post('/logout', function (Request $request) {

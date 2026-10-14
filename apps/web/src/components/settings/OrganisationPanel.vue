@@ -1,5 +1,4 @@
 <script setup>
-import CompanyClosuresPanel from '@/components/settings/CompanyClosuresPanel.vue'
 import { computed, onMounted, ref } from 'vue'
 import {
   faBuilding,

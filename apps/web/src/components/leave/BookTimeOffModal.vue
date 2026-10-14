@@ -282,6 +282,18 @@ watch(isHoliday, (holiday) => {
   }
 })
 
+// PATCH_43_SYNC_BOOKING_END_DATE
+watch(
+  startsOn,
+  (value, previousValue) => {
+    if (!value || value === previousValue) return
+
+    if (!endsOn.value || endsOn.value < value || endsOn.value === previousValue) {
+      endsOn.value = value
+    }
+  },
+)
+
 watch(
   [leaveTypeId, startsOn, startSession, endsOn, endSession],
   () => {

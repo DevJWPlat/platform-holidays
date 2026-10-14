@@ -27,6 +27,12 @@ class PersonResource extends JsonResource
             'holiday_allowance_override_days' => $this->holiday_allowance_override_days !== null
                 ? (float) $this->holiday_allowance_override_days
                 : null,
+            'service_increment_start_year' => $this->service_increment_start_year !== null
+                ? (int) $this->service_increment_start_year
+                : null,
+            'new_starter_allowance_override_days' => $this->new_starter_allowance_override_days !== null
+                ? (float) $this->new_starter_allowance_override_days
+                : null,
             'carry_over_override' => $this->carry_over_override,
             'carry_over_max_days_override' => $this->carry_over_max_days_override,
             'is_leadership' => $this->relationLoaded('staffingGroups')

@@ -486,4 +486,73 @@ onBeforeUnmount(() => {
   bottom: calc(100% + 8px);
 }
 
+/* PATCH_43B_UNIFIED_CALENDAR */
+.custom-date-picker__panel {
+  width: 300px !important;
+  max-width: calc(100vw - 40px);
+  padding: 12px !important;
+  border: 1px solid #343434;
+  background: #151515;
+}
+
+.custom-date-picker__panel button {
+  min-height: 30px;
+}
+
+.custom-date-picker__panel button:disabled {
+  color: #4f4b48 !important;
+  opacity: 0.55 !important;
+  cursor: not-allowed !important;
+}
+
+.custom-date-picker__panel button:disabled:hover {
+  border-color: transparent !important;
+  background: transparent !important;
+  color: #4f4b48 !important;
+}
+
+.custom-date-picker__panel [class*="day"]:disabled {
+  color: #4f4b48 !important;
+  opacity: 0.55 !important;
+}
+
+.custom-date-picker__panel [aria-disabled="true"] {
+  color: #4f4b48 !important;
+  opacity: 0.55 !important;
+  pointer-events: none;
+}
+
+.custom-date-picker__panel [class*="outside"] {
+  color: #4a4744 !important;
+}
+
+@media (max-width: 680px) {
+  .custom-date-picker__panel {
+    width: min(300px, calc(100vw - 32px)) !important;
+  }
+}
+
+/* PATCH_43C_DISABLED_DATE_COLOUR */
+.custom-date-picker__panel .custom-date-picker__day--disabled,
+.custom-date-picker__panel .custom-date-picker__day[disabled],
+.custom-date-picker__panel button[disabled],
+.custom-date-picker__panel button:disabled,
+.custom-date-picker__panel [aria-disabled="true"],
+.custom-date-picker__panel [class*="disabled"] {
+  color: #55514d !important;
+  opacity: 0.45 !important;
+  cursor: not-allowed !important;
+  pointer-events: none !important;
+}
+
+.custom-date-picker__panel .custom-date-picker__day--disabled:hover,
+.custom-date-picker__panel button[disabled]:hover,
+.custom-date-picker__panel button:disabled:hover,
+.custom-date-picker__panel [aria-disabled="true"]:hover,
+.custom-date-picker__panel [class*="disabled"]:hover {
+  border-color: transparent !important;
+  background: transparent !important;
+  color: #55514d !important;
+}
+
 </style>

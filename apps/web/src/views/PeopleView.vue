@@ -15,6 +15,7 @@ import api, { initialiseCsrf } from '@/api/client'
 import ManagePersonModal from '@/components/people/ManagePersonModal.vue'
 import ManageApproverRuleModal from '@/components/people/ManageApproverRuleModal.vue'
 import ManualLeaveModal from '@/components/leave/ManualLeaveModal.vue'
+import GroupBookingModal from '@/components/leave/GroupBookingModal.vue'
 import AdjustAllowanceModal from '@/components/people/AdjustAllowanceModal.vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -47,6 +48,7 @@ const allowanceAdjustOpen = ref(false)
 const allowanceAdjustPerson = ref(null)
 const manualLeavePerson = ref(null)
 const managePersonOpen = ref(false)
+const groupBookingOpen = ref(false)
 const editingPerson = ref(null)
 
 const canManageDepartments = computed(() =>
@@ -306,6 +308,18 @@ async function onManualLeaveCreated() {
   await loadPeople()
 }
 
+function openGroupBooking() {
+  groupBookingOpen.value = true
+}
+
+function closeGroupBooking() {
+  groupBookingOpen.value = false
+}
+
+async function onGroupBookingChanged() {
+  await loadPeople()
+}
+
 function openAddPerson() {
   editingPerson.value = null
   managePersonOpen.value = true
@@ -358,6 +372,16 @@ onMounted(loadPeople)
           <FontAwesomeIcon :icon="faUsers" />
           {{ people.length }} {{ people.length === 1 ? 'person' : 'people' }}
         </div>
+
+        <button
+          v-if="auth.user?.permissions?.manage_settings"
+          class="button button--secondary button--compact"
+          type="button"
+          @click="openGroupBooking"
+        >
+          <FontAwesomeIcon :icon="faCalendarDays" />
+          Group booking
+        </button>
 
         <button
           v-if="auth.user?.permissions?.manage_settings"
@@ -871,6 +895,12 @@ onMounted(loadPeople)
       </Transition>
     </Teleport>
   </section>
+
+    <GroupBookingModal
+      :open="groupBookingOpen"
+      @close="closeGroupBooking"
+      @changed="onGroupBookingChanged"
+    />
 
     <ManagePersonModal
       :open="managePersonOpen"

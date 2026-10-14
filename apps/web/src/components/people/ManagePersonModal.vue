@@ -25,6 +25,9 @@ const props = defineProps({
 const emit = defineEmits(['close', 'saved', 'archived'])
 
 const departments = ref([])
+const holidayPolicy = ref({
+  base_allowance_days: 25,
+})
 const loading = ref(false)
 const saving = ref(false)
 const archiving = ref(false)
@@ -46,6 +49,44 @@ const futureStartDate = computed(() =>
     && form.value.employment_start_date > todayKey,
   ),
 )
+
+const newStarterAllowancePreview = computed(() => {
+  const start = form.value.employment_start_date
+  if (!start) return null
+
+  const year = Number(String(start).slice(0, 4))
+  const startDate = new Date(`${start}T12:00:00Z`)
+  const endDate = new Date(`${year}-12-31T12:00:00Z`)
+
+  if (
+    !Number.isFinite(year)
+    || Number.isNaN(startDate.getTime())
+    || startDate > endDate
+  ) {
+    return null
+  }
+
+  const annual = form.value.holiday_allowance_override_days === ''
+    ? Number(holidayPolicy.value?.base_allowance_days || 25)
+    : Number(form.value.holiday_allowance_override_days)
+
+  if (!Number.isFinite(annual) || annual < 0) return null
+
+  const dayMs = 24 * 60 * 60 * 1000
+  const daysRemaining = Math.floor(
+    (endDate.getTime() - startDate.getTime()) / dayMs,
+  ) + 1
+
+  const raw = (annual / 365) * daysRemaining
+
+  return {
+    year,
+    annual,
+    daysRemaining,
+    raw,
+    rounded: Math.ceil(raw),
+  }
+})
 
 const validationError = computed(() => {
   if (!form.value.name.trim()) return 'Enter a name.'
@@ -94,6 +135,8 @@ function emptyForm() {
     primary_department_id: '',
     can_override_staffing_limits: false,
     holiday_allowance_override_days: '',
+    service_increment_start_year: '',
+    new_starter_allowance_override_days: '',
     carry_over_override: '',
   }
 }
@@ -124,6 +167,8 @@ function resetForm() {
     primary_department_id: primary?.id ? String(primary.id) : '',
     can_override_staffing_limits: Boolean(props.person.can_override_staffing_limits),
     holiday_allowance_override_days: props.person.holiday_allowance_override_days ?? '',
+    service_increment_start_year: props.person.service_increment_start_year ?? '',
+    new_starter_allowance_override_days: props.person.new_starter_allowance_override_days ?? '',
     carry_over_override:
       props.person.carry_over_override === null || props.person.carry_over_override === undefined
         ? ''
@@ -138,8 +183,15 @@ async function loadOptions() {
   error.value = ''
 
   try {
-    const departmentsResponse = await api.get('/api/v1/departments')
+    const [departmentsResponse, holidayPolicyResponse] = await Promise.all([
+      api.get('/api/v1/departments'),
+      api.get('/api/v1/holiday-policy'),
+    ])
+
     departments.value = departmentsResponse.data?.data || []
+    holidayPolicy.value = holidayPolicyResponse.data?.data || {
+      base_allowance_days: 25,
+    }
   } catch (requestError) {
     console.error(requestError)
     error.value = 'Could not load person setup options.'
@@ -199,6 +251,14 @@ async function save() {
         form.value.holiday_allowance_override_days === ''
           ? null
           : Number(form.value.holiday_allowance_override_days),
+      service_increment_start_year:
+        form.value.service_increment_start_year === ''
+          ? null
+          : Number(form.value.service_increment_start_year),
+      new_starter_allowance_override_days:
+        form.value.new_starter_allowance_override_days === ''
+          ? null
+          : Number(form.value.new_starter_allowance_override_days),
       carry_over_override:
         form.value.carry_over_override === ''
           ? null
@@ -283,6 +343,35 @@ async function archivePerson() {
     archiving.value = false
   }
 }
+
+// PATCH_41E_NEW_STARTER_AUTO_FILL
+watch(
+  [
+    () => form.value.employment_start_date,
+    () => form.value.holiday_allowance_override_days,
+    () => holidayPolicy.value?.base_allowance_days,
+  ],
+  () => {
+    const preview = newStarterAllowancePreview.value
+    if (!preview) return
+
+    form.value.new_starter_allowance_override_days = preview.rounded
+  },
+)
+
+
+// PATCH_41_INCREMENT_YEAR_SUGGESTION
+watch(
+  () => form.value.employment_start_date,
+  (value) => {
+    if (editing.value || !value || form.value.service_increment_start_year !== '') return
+
+    const startYear = Number(String(value).slice(0, 4))
+    if (Number.isFinite(startYear)) {
+      form.value.service_increment_start_year = startYear + 1
+    }
+  },
+)
 
 watch(
   () => props.open,
@@ -488,6 +577,67 @@ watch(
                   />
                   <span>days</span>
                 </span>
+              </label>
+
+              <div
+                v-if="newStarterAllowancePreview"
+                class="new-starter-calculation"
+              >
+                <div class="new-starter-calculation__heading">
+                  <div>
+                    <strong>New starter allowance</strong>
+                    <small>Calculated from the selected start date</small>
+                  </div>
+                  <span>{{ newStarterAllowancePreview.year }}</span>
+                </div>
+
+                <div class="new-starter-calculation__formula">
+                  <span>
+                    {{ newStarterAllowancePreview.annual }}
+                    ÷ 365 ×
+                    {{ newStarterAllowancePreview.daysRemaining }}
+                  </span>
+                  <strong>
+                    {{ newStarterAllowancePreview.raw.toFixed(2) }}
+                    → {{ newStarterAllowancePreview.rounded }} days
+                  </strong>
+                </div>
+
+                <label class="field">
+                  <span class="field__label">First-year holiday allowance</span>
+                  <span class="person-allowance-input">
+                    <input
+                      v-model="form.new_starter_allowance_override_days"
+                      type="number"
+                      min="0"
+                      max="365"
+                      step="1"
+                    />
+                    <span>days</span>
+                  </span>
+                  <small class="person-allowance-help">
+                    Filled automatically from the calculation, but you can edit it.
+                  </small>
+                </label>
+              </div>
+
+              <label class="field">
+                <span class="field__label">Automatic +1 starts from year</span>
+                <span class="person-allowance-input">
+                  <input
+                    v-model="form.service_increment_start_year"
+                    type="number"
+                    min="2000"
+                    max="2200"
+                    step="1"
+                    placeholder="e.g. 2027"
+                  />
+                  <span>year</span>
+                </span>
+                <small class="person-allowance-help">
+                  From 1 January in this year, this person receives the annual +1 day.
+                  It then increases by one each year until automatic entitlement reaches 30 days.
+                </small>
               </label>
 
               <label class="field">
@@ -910,6 +1060,67 @@ watch(
   font-size: 10px;
   line-height: 1.45;
 }
+
+.new-starter-calculation {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #303030;
+  background: #151515;
+}
+
+.new-starter-calculation__heading,
+.new-starter-calculation__formula {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.new-starter-calculation__heading {
+  align-items: flex-start;
+}
+
+.new-starter-calculation__heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.new-starter-calculation__heading strong,
+.new-starter-calculation__formula strong {
+  color: #eee9e3;
+}
+
+.new-starter-calculation__heading small,
+.new-starter-calculation__formula {
+  color: #77716b;
+  font-size: 10px;
+}
+
+.new-starter-calculation__heading > span {
+  color: #ef5b3f;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.new-starter-calculation__formula {
+  align-items: baseline;
+  padding: 11px 12px;
+  border: 1px solid #2d2d2d;
+  background: #111;
+}
+
+.new-starter-calculation__formula strong {
+  font-size: 12px;
+}
+
+@media (max-width: 680px) {
+  .new-starter-calculation__formula {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+
 
 /* Patch 21A compact person modal */
 .manage-person-modal {

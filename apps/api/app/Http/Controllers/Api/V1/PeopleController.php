@@ -7,6 +7,8 @@ use App\Http\Resources\PersonResource;
 use App\Models\Department;
 use App\Models\StaffingGroup;
 use App\Models\User;
+use App\Services\AllowanceService;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -17,8 +19,10 @@ use Illuminate\Validation\ValidationException;
 
 class PeopleController extends Controller
 {
-    public function index(Request $request)
-    {
+    public function index(
+        Request $request,
+        AllowanceService $allowanceService,
+    ) {
         $viewer = $request->user();
 
         $people = User::query()
@@ -27,6 +31,17 @@ class PeopleController extends Controller
             ->with(['departments', 'staffingGroups'])
             ->orderBy('name')
             ->get();
+
+        $anchor = CarbonImmutable::now(
+            $viewer->organisation?->timezone ?: 'Europe/London',
+        );
+
+        $people->each(function (User $person) use ($allowanceService, $anchor) {
+            $person->setAttribute(
+                'allowance_summary',
+                $allowanceService->ensureYear($person, $anchor),
+            );
+        });
 
         return PersonResource::collection($people);
     }
@@ -57,6 +72,10 @@ class PeopleController extends Controller
                 'date_of_birth' => $validated['date_of_birth'] ?? null,
                 'holiday_allowance_override_days' =>
                     $validated['holiday_allowance_override_days'] ?? null,
+                'service_increment_start_year' =>
+                    $validated['service_increment_start_year'] ?? null,
+                'new_starter_allowance_override_days' =>
+                    $validated['new_starter_allowance_override_days'] ?? null,
                 'carry_over_override' =>
                     $validated['carry_over_override'] ?? null,
                 'carry_over_max_days_override' =>
@@ -114,6 +133,10 @@ class PeopleController extends Controller
                 'date_of_birth' => $validated['date_of_birth'] ?? null,
                 'holiday_allowance_override_days' =>
                     $validated['holiday_allowance_override_days'] ?? null,
+                'service_increment_start_year' =>
+                    $validated['service_increment_start_year'] ?? null,
+                'new_starter_allowance_override_days' =>
+                    $validated['new_starter_allowance_override_days'] ?? null,
                 'carry_over_override' =>
                     $validated['carry_over_override'] ?? null,
                 'carry_over_max_days_override' =>
@@ -185,6 +208,8 @@ class PeopleController extends Controller
             'employment_start_date' => ['nullable', 'date'],
             'date_of_birth' => ['nullable', 'date'],
             'holiday_allowance_override_days' => ['nullable', 'integer', 'min:0', 'max:365'],
+            'service_increment_start_year' => ['nullable', 'integer', 'min:2000', 'max:2200'],
+            'new_starter_allowance_override_days' => ['nullable', 'numeric', 'min:0', 'max:365'],
             'carry_over_override' => ['nullable', 'boolean'],
             'carry_over_max_days_override' => ['nullable', 'integer', 'min:0', 'max:365'],
             'is_leadership' => ['sometimes', 'boolean'],

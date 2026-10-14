@@ -10,10 +10,12 @@ import {
   faFilter,
   faPlaneDeparture,
   faRotateRight,
+  faTrash,
   faXmark,
 } from '@fortawesome/free-solid-svg-icons'
-import api from '@/api/client'
+import api, { initialiseCsrf } from '@/api/client'
 import { getLeaveTypeIcon } from '@/utils/leaveTypeIcons'
+import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps({
   requestRefreshKey: {
@@ -22,8 +24,9 @@ const props = defineProps({
   },
 })
 
-defineEmits(['book-time-off'])
+defineEmits(['book-time-off', 'group-booking'])
 
+const auth = useAuthStore()
 const people = ref([])
 const departments = ref([])
 const leaveRequests = ref([])
@@ -35,6 +38,9 @@ const selectedDepartment = ref('all')
 const bankHolidayMap = ref({})
 const wallchartAllowances = ref({})
 const selectedLeave = ref(null)
+const deletingLeave = ref(false)
+const confirmDeleteLeave = ref(false)
+const deleteLeaveError = ref('')
 const calendarScroller = ref(null)
 const dragging = ref(false)
 
@@ -45,6 +51,9 @@ let snapTimer = null
 const today = startOfDay(new Date())
 const selectedYear = ref(today.getFullYear())
 const visibleMonthLabel = ref('')
+const canCreateGroupBooking = computed(() =>
+  Boolean(auth.user?.permissions?.manage_settings),
+)
 const DAY_WIDTH = 40
 
 function startOfDay(date) {
@@ -195,13 +204,36 @@ function updateVisibleMonthLabel() {
 }
 
 const filteredPeople = computed(() => {
-  if (selectedDepartment.value === 'all') return people.value
+  const source = selectedDepartment.value === 'all'
+    ? [...people.value]
+    : people.value.filter((person) =>
+        (person.departments || []).some(
+          (department) => String(department.id) === String(selectedDepartment.value),
+        ),
+      )
 
-  return people.value.filter((person) =>
-    (person.departments || []).some(
-      (department) => String(department.id) === String(selectedDepartment.value),
-    ),
-  )
+  const currentUserId = Number(auth.user?.id || 0)
+
+  return source.sort((a, b) => {
+    const aIsCurrent = Number(a.id) === currentUserId
+    const bIsCurrent = Number(b.id) === currentUserId
+
+    if (aIsCurrent && !bIsCurrent) return -1
+    if (!aIsCurrent && bIsCurrent) return 1
+
+    const aDepartment = primaryDepartment(a)?.name || 'ZZZ'
+    const bDepartment = primaryDepartment(b)?.name || 'ZZZ'
+
+    const departmentCompare = aDepartment.localeCompare(bDepartment, 'en-GB', {
+      sensitivity: 'base',
+    })
+
+    if (departmentCompare !== 0) return departmentCompare
+
+    return String(a.name || '').localeCompare(String(b.name || ''), 'en-GB', {
+      sensitivity: 'base',
+    })
+  })
 })
 
 const selectedDepartmentName = computed(() => {
@@ -552,11 +584,66 @@ function stopDragging(event) {
   }, 80)
 }
 
+const canDeleteSelectedLeave = computed(() =>
+  Boolean(
+    auth.user?.permissions?.manage_settings
+    && selectedLeave.value
+    && ['pending', 'approved'].includes(selectedLeave.value.status),
+  ),
+)
+
+async function deleteSelectedLeave() {
+  if (!selectedLeave.value || deletingLeave.value) return
+
+  if (!confirmDeleteLeave.value) {
+    confirmDeleteLeave.value = true
+    return
+  }
+
+  deletingLeave.value = true
+  deleteLeaveError.value = ''
+
+  try {
+    await initialiseCsrf()
+
+    if (selectedLeave.value.group_booking_id) {
+      await api.delete(
+        `/api/v1/group-bookings/${selectedLeave.value.group_booking_id}`,
+      )
+    } else {
+      await api.delete(
+        `/api/v1/leave-requests/${selectedLeave.value.id}`,
+      )
+    }
+
+    deletingLeave.value = false
+    closeLeave()
+    await loadLeaveData()
+
+    if (typeof loadWallchartAllowances === 'function') {
+      await loadWallchartAllowances()
+    }
+  } catch (requestError) {
+    const errors = requestError.response?.data?.errors
+
+    deleteLeaveError.value = errors
+      ? Object.values(errors).flat()[0]
+      : requestError.response?.data?.message || 'Could not remove this booking.'
+
+    confirmDeleteLeave.value = false
+  } finally {
+    deletingLeave.value = false
+  }
+}
+
 function openLeave(item) {
   selectedLeave.value = item
 }
 
 function closeLeave() {
+  if (deletingLeave.value) return
+  confirmDeleteLeave.value = false
+  deleteLeaveError.value = ''
   selectedLeave.value = null
 }
 
@@ -608,14 +695,26 @@ onBeforeUnmount(() => {
         <p>See who's away across Platform.</p>
       </div>
 
-      <button
-        class="button button--primary page-heading__action"
-        type="button"
-        @click="$emit('book-time-off')"
-      >
-        <FontAwesomeIcon :icon="faPlaneDeparture" />
-        Book time off
-      </button>
+      <div class="wallchart-heading__actions">
+        <button
+          v-if="canCreateGroupBooking"
+          class="button button--secondary page-heading__action wallchart-group-booking-button"
+          type="button"
+          @click="$emit('group-booking')"
+        >
+          <FontAwesomeIcon :icon="faCalendarDay" />
+          Group booking
+        </button>
+
+        <button
+          class="button button--primary page-heading__action"
+          type="button"
+          @click="$emit('book-time-off')"
+        >
+          <FontAwesomeIcon :icon="faPlaneDeparture" />
+          Book time off
+        </button>
+      </div>
     </div>
 
     <section class="wallchart-panel">
@@ -1028,7 +1127,46 @@ onBeforeUnmount(() => {
                     {{ selectedLeave.duration_days === 1 ? 'day' : 'days' }}
                   </dd>
                 </div>
+
+                <div v-if="selectedLeave.reason">
+                  <dt>Reason / event</dt>
+                  <dd>{{ selectedLeave.reason }}</dd>
+                </div>
               </dl>
+
+              <div v-if="deleteLeaveError" class="wallchart-leave-modal__error">
+                {{ deleteLeaveError }}
+              </div>
+
+              <div
+                v-if="canDeleteSelectedLeave"
+                class="wallchart-leave-modal__actions"
+              >
+                <button
+                  v-if="confirmDeleteLeave && !deletingLeave"
+                  class="button button--secondary"
+                  type="button"
+                  @click="confirmDeleteLeave = false"
+                >
+                  Keep booking
+                </button>
+
+                <button
+                  class="button button--danger"
+                  type="button"
+                  :disabled="deletingLeave"
+                  @click="deleteSelectedLeave"
+                >
+                  <FontAwesomeIcon :icon="faTrash" />
+                  {{
+                    deletingLeave
+                      ? 'Removing…'
+                      : confirmDeleteLeave
+                        ? (selectedLeave.group_booking_id ? 'Confirm remove group' : 'Confirm delete')
+                        : (selectedLeave.group_booking_id ? 'Delete group booking' : 'Delete booking')
+                  }}
+                </button>
+              </div>
             </div>
           </section>
         </div>
@@ -1884,4 +2022,62 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(239, 91, 63, 0.55);
   background: #201310;
 }
+.wallchart-heading__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.wallchart-group-booking-button {
+  border-color: #3a3a3a;
+  background: transparent;
+}
+
+.wallchart-group-booking-button:hover {
+  border-color: #ef5b3f;
+  color: #ef5b3f;
+}
+
+@media (max-width: 680px) {
+  .wallchart-heading__actions {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .wallchart-heading__actions .button {
+    justify-content: center;
+    width: 100%;
+  }
+}
+
+.wallchart-leave-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid #292929;
+}
+
+.wallchart-leave-modal__error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(239, 91, 63, 0.45);
+  background: rgba(239, 91, 63, 0.08);
+  color: #f3a393;
+  font-size: 10px;
+}
+
+.wallchart-leave-modal .button--danger {
+  border: 1px solid #8f3f32;
+  background: transparent;
+  color: #ef765f;
+}
+
+.wallchart-leave-modal .button--danger:hover {
+  border-color: #ef5b3f;
+  background: rgba(239, 91, 63, 0.08);
+  color: #ff8069;
+}
+
 </style>
