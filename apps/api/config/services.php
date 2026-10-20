@@ -9,6 +9,21 @@ return [
         'allowed_domain' => env('GOOGLE_ALLOWED_DOMAIN', 'platform.team'),
     ],
 
+    'clickup' => [
+        'token' => env('CLICKUP_API_TOKEN'),
+        'list_id' => env('CLICKUP_LIST_ID', '1200650000011890'),
+        'base_url' => env('CLICKUP_API_URL', 'https://api.clickup.com/api/v2'),
+
+        // Some staff still use their older Built By Platform ClickUp accounts.
+        // Keys are Platform Holidays emails; values are the ClickUp account emails.
+        'user_email_map' => [
+            'jonny@platform.team' => 'jonny@builtbyplatform.co.uk',
+            'tom@platform.team' => 'thomas@builtbyplatform.co.uk',
+            'neil@platform.team' => 'neil@builtbyplatform.co.uk',
+            'christian@platform.team' => 'christian@builtbyplatform.co.uk',
+        ],
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Third Party Services
