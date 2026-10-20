@@ -7,6 +7,8 @@ use App\Models\Organisation;
 use App\Models\OrganisationSetting;
 use App\Models\User;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class AllowanceService
 {
@@ -62,6 +64,19 @@ class AllowanceService
         $organisation = $user->organisation()->firstOrFail();
         $year = $this->leaveYearFor($organisation, $anchor);
         $policy = $this->policy($organisation);
+
+        /*
+         * Timetastic snapshots are the migration authority for imported
+         * historical leave years. Once a year has been reconciled we must not
+         * retroactively rewrite its base grant/service increment/carry-over
+         * simply because profile metadata such as employment_start_date is
+         * added later.
+         *
+         * Future years remain live and continue to use Platform's rules.
+         */
+        if ($this->isTimetasticSnapshotYear($user, $organisation, $year)) {
+            return $this->summary($user, $year['start']);
+        }
 
         $automaticMaximumDays = 30.0;
 
@@ -254,6 +269,22 @@ class AllowanceService
                 'metadata' => $entry->metadata,
             ])->values(),
         ];
+    }
+
+    private function isTimetasticSnapshotYear(
+        User $user,
+        Organisation $organisation,
+        array $year,
+    ): bool {
+        if (! Schema::hasTable('timetastic_allowance_snapshots')) {
+            return false;
+        }
+
+        return DB::table('timetastic_allowance_snapshots')
+            ->where('organisation_id', $organisation->id)
+            ->where('user_id', $user->id)
+            ->where('year', (int) $year['start']->year)
+            ->exists();
     }
 
     private function ensureCarryOver(
