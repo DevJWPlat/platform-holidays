@@ -280,10 +280,16 @@ class AllowanceService
             return false;
         }
 
+        $leaveYear = (int) $year['start']->year;
+
+        if ($leaveYear > 2026) {
+            return false;
+        }
+
         return DB::table('timetastic_allowance_snapshots')
             ->where('organisation_id', $organisation->id)
             ->where('user_id', $user->id)
-            ->where('year', (int) $year['start']->year)
+            ->where('year', $leaveYear)
             ->exists();
     }
 
@@ -297,6 +303,39 @@ class AllowanceService
             ? (bool) $user->carry_over_override
             : (bool) $policy['carry_over_enabled'];
 
+        $timezone = $organisation->timezone ?: 'Europe/London';
+        $today = CarbonImmutable::now($timezone)->startOfDay();
+        $previousAnchor = $year['start']->subDay();
+        $previousYear = $this->leaveYearFor($organisation, $previousAnchor);
+
+        $removeCarryOver = function () use ($user, $year): void {
+            AllowanceLedgerEntry::query()
+                ->where('user_id', $user->id)
+                ->whereDate('leave_year_start', $year['start']->toDateString())
+                ->where('source_key', 'carry-over')
+                ->delete();
+        };
+
+        if ($today->lessThanOrEqualTo($previousYear['end'])) {
+            $removeCarryOver();
+            return;
+        }
+
+        if ($user->employment_start_date) {
+            $employmentStart = CarbonImmutable::parse(
+                $user->employment_start_date->toDateString(),
+                $timezone,
+            )->startOfDay();
+
+            if (
+                $employmentStart->greaterThanOrEqualTo($previousYear['start'])
+                && $employmentStart->lessThanOrEqualTo($previousYear['end'])
+            ) {
+                $removeCarryOver();
+                return;
+            }
+        }
+
         if (! $carryOverEnabled) {
             AllowanceLedgerEntry::query()
                 ->where('user_id', $user->id)
@@ -306,9 +345,6 @@ class AllowanceService
 
             return;
         }
-
-        $previousAnchor = $year['start']->subDay();
-        $previousYear = $this->leaveYearFor($organisation, $previousAnchor);
 
         $previousEntries = AllowanceLedgerEntry::query()
             ->where('user_id', $user->id)
