@@ -18,7 +18,7 @@ class Prepare2027Allowances extends Command
     protected $description = 'Preview/rebuild 2027 Platform holiday allowances from the agreed Timetastic 2026 annual allowances';
 
     private array $baselines = [
-        'Jonny Whittle' => ['annual' => 22, 'increment_year' => 2027],
+        'Jonny Whittle' => ['annual' => 22, 'increment_year' => 2027, 'bonus_days' => 2],
         'Josh Diamond' => ['annual' => 30, 'increment_year' => 2027],
         'Lydia Thorne' => ['annual' => 22, 'increment_year' => 2027],
         'Neil Buckley' => ['annual' => 30, 'increment_year' => 2027],
@@ -76,7 +76,8 @@ class Prepare2027Allowances extends Command
                 $incrementDays = min(1.0, 30.0 - $annual);
             }
 
-            $entitlement = $annual + $incrementDays;
+            $bonusDays = (float) ($setup['bonus_days'] ?? 0);
+            $entitlement = $annual + $incrementDays + $bonusDays;
             $expectedRemaining = round($entitlement - $bookedDays, 2);
             $current = $allowanceService->summary($user, $year['start']);
 
@@ -85,6 +86,7 @@ class Prepare2027Allowances extends Command
                 number_format($annual, 0),
                 $incrementYear,
                 number_format($entitlement, 0),
+                number_format($bonusDays, 0),
                 number_format($bookedDays, 2),
                 number_format((float) $current['remaining_days'], 2),
                 number_format($expectedRemaining, 2),
@@ -94,7 +96,7 @@ class Prepare2027Allowances extends Command
         $this->newLine();
         $this->info($this->option('commit') ? '2027 allowance rebuild' : '2027 allowance rebuild preview');
         $this->table(
-            ['Person','2026 annual','+1 starts','2027 entitlement','2027 booked','Current remaining','Expected remaining'],
+            ['Person','2026 annual','+1 starts','2027 entitlement','Bonus','2027 booked','Current remaining','Expected remaining'],
             $rows,
         );
 
@@ -105,7 +107,7 @@ class Prepare2027Allowances extends Command
 
         if (! $this->option('commit')) {
             $this->comment('PREVIEW ONLY - nothing was changed.');
-            $this->line('Expected entitlements before bookings: Jonny 23, Josh 30, Lydia 23, Neil 30, Sam 20, Tom 22, Ben 23, Christian 24, Matt 30.');
+            $this->line('Expected entitlements before bookings: Jonny 25 (23 + 2 bonus), Josh 30, Lydia 23, Neil 30, Sam 20, Tom 22, Ben 23, Christian 24, Matt 30.');
             $this->line('When the booked-days column looks right, run: php artisan holidays:prepare-2027-allowances --commit');
             return self::SUCCESS;
         }
@@ -126,6 +128,38 @@ class Prepare2027Allowances extends Command
                     ->delete();
 
                 $allowanceService->ensureYear($user->fresh(), $anchor);
+
+                $bonusDays = (float) ($setup['bonus_days'] ?? 0);
+                $bonusMinutes = (int) round($bonusDays * AllowanceService::MINUTES_PER_DAY);
+
+                if ($bonusMinutes > 0) {
+                    AllowanceLedgerEntry::query()->updateOrCreate(
+                        [
+                            'user_id' => $user->id,
+                            'leave_year_start' => $year['start']->toDateString(),
+                            'source_key' => '2027-one-off-bonus',
+                        ],
+                        [
+                            'leave_year_end' => $year['end']->toDateString(),
+                            'entry_type' => AllowanceLedgerEntry::TYPE_MANUAL_ADJUSTMENT,
+                            'minutes' => $bonusMinutes,
+                            'effective_date' => $year['start']->toDateString(),
+                            'reference_type' => null,
+                            'reference_id' => null,
+                            'note' => 'One-off 2027 holiday bonus',
+                            'metadata' => [
+                                'bonus_days' => $bonusDays,
+                                'one_off' => true,
+                            ],
+                        ],
+                    );
+                } else {
+                    AllowanceLedgerEntry::query()
+                        ->where('user_id', $user->id)
+                        ->whereDate('leave_year_start', $year['start']->toDateString())
+                        ->where('source_key', '2027-one-off-bonus')
+                        ->delete();
+                }
             }
         });
 
