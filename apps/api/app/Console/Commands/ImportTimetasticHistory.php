@@ -17,9 +17,10 @@ use Illuminate\Support\Str;
 class ImportTimetasticHistory extends Command
 {
     protected $signature = 'holidays:import-timetastic
-        {--commit : Write the import to the database}
+        {--commit : Write the import or allowance reconciliation to the database}
         {--audit : Compare Platform allowance totals with Timetastic snapshots}
-        {--year=* : Restrict preview/import/audit to one or more years}';
+        {--reconcile-allowances : Preview/reconcile historical allowance balances from Timetastic}
+        {--year=* : Restrict preview/import/audit/reconciliation to one or more years}';
 
     protected $description = 'Preview/import Timetastic history (2022-2027) and audit holiday balances';
 
@@ -55,6 +56,16 @@ class ImportTimetasticHistory extends Command
             ->filter()
             ->unique()
             ->values();
+
+        if ($this->option('reconcile-allowances')) {
+            return $this->reconcileAllowances(
+                $organisation,
+                $payload['allowance_snapshots'] ?? [],
+                $allowanceService,
+                $years->all(),
+                (bool) $this->option('commit'),
+            );
+        }
 
         if ($this->option('audit')) {
             return $this->audit(
@@ -377,6 +388,287 @@ class ImportTimetasticHistory extends Command
         $this->info('Timetastic history import complete.');
         $this->line('Run the allowance comparison with:');
         $this->line('  php artisan holidays:import-timetastic --audit');
+
+        return self::SUCCESS;
+    }
+
+    private function reconcileAllowances(
+        Organisation $organisation,
+        array $snapshots,
+        AllowanceService $allowanceService,
+        array $years,
+        bool $commit,
+    ): int {
+        /*
+         * Timetastic is the migration authority up to and including 2026.
+         * 2027 is deliberately left to Platform's new entitlement rules
+         * (service increments, new starter rules and future carry-over).
+         */
+        $maximumHistoricalYear = 2026;
+
+        $snapshots = collect($snapshots)
+            ->filter(fn ($snapshot) =>
+                (int) $snapshot['year'] <= $maximumHistoricalYear
+            )
+            ->when(
+                count($years) > 0,
+                fn ($items) => $items->whereIn('year', $years)
+            )
+            ->sortBy([
+                ['year', 'asc'],
+                ['user_name', 'asc'],
+            ])
+            ->values();
+
+        $users = User::query()
+            ->where('organisation_id', $organisation->id)
+            ->get()
+            ->keyBy(fn (User $user) => $this->normalise($user->name));
+
+        $rows = [];
+        $changes = 0;
+        $missingUsers = 0;
+
+        $runner = function () use (
+            $snapshots,
+            $users,
+            $organisation,
+            $allowanceService,
+            &$rows,
+            &$changes,
+            &$missingUsers,
+            $commit,
+        ) {
+            foreach ($snapshots as $snapshot) {
+                /** @var User|null $user */
+                $user = $users->get($this->normalise($snapshot['user_name']));
+                $year = (int) $snapshot['year'];
+
+                if (! $user) {
+                    $rows[] = [
+                        $year,
+                        $snapshot['user_name'],
+                        'MISSING USER',
+                        '',
+                        '',
+                        '',
+                    ];
+                    $missingUsers++;
+                    continue;
+                }
+
+                $anchor = CarbonImmutable::create(
+                    $year,
+                    7,
+                    1,
+                    12,
+                    0,
+                    0,
+                    $organisation->timezone ?: 'Europe/London',
+                );
+
+                $yearInfo = $allowanceService->leaveYearFor(
+                    $organisation,
+                    $anchor,
+                );
+
+                /*
+                 * Re-run ensureYear before each person/year so carry-over from
+                 * the previous reconciled year is reflected immediately.
+                 */
+                $summary = $allowanceService->ensureYear($user, $anchor);
+
+                $sourceKey = sprintf(
+                    'timetastic-allowance-reconciliation-%d',
+                    $year,
+                );
+
+                $existing = AllowanceLedgerEntry::query()
+                    ->where('user_id', $user->id)
+                    ->whereDate(
+                        'leave_year_start',
+                        $yearInfo['start']->toDateString(),
+                    )
+                    ->where('source_key', $sourceKey)
+                    ->first();
+
+                $existingMinutes = (int) ($existing?->minutes ?? 0);
+
+                $currentRemainingMinutes =
+                    (int) $summary['remaining_minutes'];
+
+                /*
+                 * Remove any previous reconciliation from the current total,
+                 * then calculate the exact idempotent adjustment needed to
+                 * reach Timetastic's recorded remaining balance.
+                 */
+                $remainingWithoutReconciliation =
+                    $currentRemainingMinutes - $existingMinutes;
+
+                $targetRemainingMinutes = (int) round(
+                    ((float) $snapshot['remaining'])
+                    * AllowanceService::MINUTES_PER_DAY
+                );
+
+                $requiredAdjustmentMinutes =
+                    $targetRemainingMinutes - $remainingWithoutReconciliation;
+
+                $currentDays = round(
+                    $currentRemainingMinutes
+                    / AllowanceService::MINUTES_PER_DAY,
+                    2,
+                );
+
+                $targetDays = round(
+                    $targetRemainingMinutes
+                    / AllowanceService::MINUTES_PER_DAY,
+                    2,
+                );
+
+                $adjustmentDays = round(
+                    $requiredAdjustmentMinutes
+                    / AllowanceService::MINUTES_PER_DAY,
+                    2,
+                );
+
+                $status = abs($currentDays - $targetDays) < 0.01
+                    ? 'MATCH'
+                    : 'ADJUST';
+
+                if ($status === 'ADJUST') {
+                    $changes++;
+                }
+
+                $rows[] = [
+                    $year,
+                    $snapshot['user_name'],
+                    $status,
+                    number_format($currentDays, 2),
+                    number_format($targetDays, 2),
+                    ($adjustmentDays >= 0 ? '+' : '')
+                        . number_format($adjustmentDays, 2),
+                ];
+
+                if (! $commit) {
+                    continue;
+                }
+
+                if ($requiredAdjustmentMinutes === 0) {
+                    if ($existing) {
+                        $existing->delete();
+                    }
+
+                    continue;
+                }
+
+                AllowanceLedgerEntry::query()->updateOrCreate(
+                    [
+                        'user_id' => $user->id,
+                        'leave_year_start' =>
+                            $yearInfo['start']->toDateString(),
+                        'source_key' => $sourceKey,
+                    ],
+                    [
+                        'leave_year_end' =>
+                            $yearInfo['end']->toDateString(),
+                        'entry_type' =>
+                            AllowanceLedgerEntry::TYPE_MANUAL_ADJUSTMENT,
+                        'minutes' => $requiredAdjustmentMinutes,
+                        'effective_date' =>
+                            $yearInfo['end']->toDateString(),
+                        'reference_type' => null,
+                        'reference_id' => null,
+                        'note' =>
+                            'Timetastic migration allowance reconciliation',
+                        'metadata' => [
+                            'source' => 'Timetastic annual report',
+                            'timetastic_year' => $year,
+                            'timetastic_allowance_days' =>
+                                (float) $snapshot['allowance'],
+                            'timetastic_brought_forward_days' =>
+                                (float) $snapshot['brought_forward'],
+                            'timetastic_time_in_lieu_days' =>
+                                (float) $snapshot['time_in_lieu'],
+                            'timetastic_taken_days' =>
+                                (float) $snapshot['taken'],
+                            'timetastic_remaining_days' =>
+                                (float) $snapshot['remaining'],
+                            'migration_only' => true,
+                        ],
+                    ],
+                );
+
+                /*
+                 * Refresh now so the next year's carry-over calculation sees
+                 * the corrected balance.
+                 */
+                $allowanceService->ensureYear($user, $anchor);
+            }
+        };
+
+        if ($commit) {
+            DB::transaction($runner);
+        } else {
+            $runner();
+        }
+
+        $this->newLine();
+        $this->info(
+            $commit
+                ? 'Timetastic historical allowance reconciliation'
+                : 'Timetastic historical allowance reconciliation preview'
+        );
+
+        $this->table(
+            [
+                'Year',
+                'Person',
+                'Status',
+                'Current remaining',
+                'TT remaining',
+                'Adjustment',
+            ],
+            $rows,
+        );
+
+        $this->newLine();
+
+        if ($missingUsers > 0) {
+            $this->error(
+                "{$missingUsers} snapshots could not be matched to a Platform user."
+            );
+
+            return self::FAILURE;
+        }
+
+        if (! $commit) {
+            $this->comment(
+                'PREVIEW ONLY - no allowance adjustments were written.'
+            );
+            $this->line(
+                "{$changes} historical person/year balances would be adjusted."
+            );
+            $this->line(
+                '2027 is intentionally excluded so Platform future entitlement rules remain authoritative.'
+            );
+            $this->line(
+                'When this looks right, rerun with: '
+                . 'php artisan holidays:import-timetastic '
+                . '--reconcile-allowances --commit'
+            );
+
+            return self::SUCCESS;
+        }
+
+        $this->info(
+            "{$changes} historical person/year balances reconciled to Timetastic."
+        );
+        $this->line(
+            '2027 was left untouched for Platform future entitlement rules.'
+        );
+        $this->line(
+            'Now run: php artisan holidays:import-timetastic --audit --year=2022 --year=2023 --year=2024 --year=2025 --year=2026'
+        );
 
         return self::SUCCESS;
     }
