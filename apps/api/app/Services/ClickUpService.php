@@ -8,6 +8,7 @@ use RuntimeException;
 
 class ClickUpService
 {
+    private ?array $cachedWorkspaceMembers = null;
     private function client(): PendingRequest
     {
         $token = trim((string) config('services.clickup.token'));
@@ -70,6 +71,10 @@ class ClickUpService
 
     public function workspaceMembers(): array
     {
+        if ($this->cachedWorkspaceMembers !== null) {
+            return $this->cachedWorkspaceMembers;
+        }
+
         $members = [];
 
         foreach ($this->workspaces() as $workspace) {
@@ -92,7 +97,7 @@ class ClickUpService
             }
         }
 
-        return array_values($members);
+        return $this->cachedWorkspaceMembers = array_values($members);
     }
 
     public function memberByEmail(string $email): ?array
