@@ -1,259 +1,301 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
-  faCalendarDays,
+  faCalendarDay,
+  faChevronDown,
   faChevronLeft,
   faChevronRight,
 } from '@fortawesome/free-solid-svg-icons'
 
 const props = defineProps({
-  modelValue: {
-    type: String,
-    default: '',
-  },
-  placeholder: {
-    type: String,
-    default: 'Choose date',
-  },
-  minDate: {
-    type: String,
-    default: '',
-  },
-  maxDate: {
-    type: String,
-    default: '',
-  },
-  disabled: {
-    type: Boolean,
-    default: false,
-  },
-  placement: {
-    type: String,
-    default: 'below',
-    validator: (value) => ['below', 'above'].includes(value),
-  },
+  modelValue: { type: String, default: '' },
+  placeholder: { type: String, default: 'Choose date' },
+  min: { type: String, default: '' },
+  minDate: { type: String, default: '' },
+  max: { type: String, default: '' },
+  maxDate: { type: String, default: '' },
+  disabled: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'change'])
 
 const root = ref(null)
 const open = ref(false)
+const monthMenuOpen = ref(false)
+const yearMenuOpen = ref(false)
+const yearList = ref(null)
 
-function parseYmd(value) {
-  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+const today = new Date()
+today.setHours(0, 0, 0, 0)
 
-  const [year, month, day] = value.split('-').map(Number)
-  return new Date(year, month - 1, day, 12, 0, 0, 0)
+function parseKey(value) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return null
+  const [year, month, day] = String(value).split('-').map(Number)
+  const date = new Date(year, month - 1, day)
+  date.setHours(0, 0, 0, 0)
+  return date
 }
 
-function formatYmd(date) {
+function keyFor(date) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
-  return year + '-' + month + '-' + day
+  return `${year}-${month}-${day}`
 }
 
-function sameDay(a, b) {
-  return !!a && !!b
-    && a.getFullYear() === b.getFullYear()
-    && a.getMonth() === b.getMonth()
-    && a.getDate() === b.getDate()
-}
-
-const selectedDate = computed(() => parseYmd(props.modelValue))
-const minDateObj = computed(() => parseYmd(props.minDate))
-const maxDateObj = computed(() => parseYmd(props.maxDate))
-const today = computed(() => {
-  const now = new Date()
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0)
-})
-
-const viewDate = ref(selectedDate.value || today.value)
-
-watch(selectedDate, (value) => {
-  if (value) {
-    viewDate.value = value
-  }
-})
-
-const displayValue = computed(() => {
-  if (!selectedDate.value) return ''
-
+function displayDate(value) {
+  const date = parseKey(value)
+  if (!date) return ''
   return new Intl.DateTimeFormat('en-GB', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
-  }).format(selectedDate.value)
+  }).format(date)
+}
+
+const effectiveMin = computed(() => props.minDate || props.min || '')
+const effectiveMax = computed(() => props.maxDate || props.max || '')
+
+const initialDate = () =>
+  parseKey(props.modelValue)
+  || parseKey(effectiveMin.value)
+  || today
+
+const viewDate = ref(
+  new Date(initialDate().getFullYear(), initialDate().getMonth(), 1),
+)
+
+const months = [
+  'January','February','March','April','May','June',
+  'July','August','September','October','November','December',
+]
+
+const visibleMonth = computed(() => months[viewDate.value.getMonth()])
+const visibleYear = computed(() => viewDate.value.getFullYear())
+
+const minimumYear = computed(() => {
+  const min = parseKey(effectiveMin.value)
+  return min ? min.getFullYear() : 1900
 })
 
-const monthLabel = computed(() => new Intl.DateTimeFormat('en-GB', {
-  month: 'long',
-  year: 'numeric',
-}).format(viewDate.value))
+const maximumYear = computed(() => {
+  const max = parseKey(effectiveMax.value)
+  return max ? max.getFullYear() : today.getFullYear() + 25
+})
 
-const weekdayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
+const years = computed(() => {
+  const values = []
+  for (let year = maximumYear.value; year >= minimumYear.value; year -= 1) {
+    values.push(year)
+  }
+  return values
+})
 
-function startOfMonth(date) {
-  return new Date(date.getFullYear(), date.getMonth(), 1, 12, 0, 0, 0)
-}
-
-function endOfMonth(date) {
-  return new Date(date.getFullYear(), date.getMonth() + 1, 0, 12, 0, 0, 0)
-}
-
-function addMonths(date, amount) {
-  return new Date(date.getFullYear(), date.getMonth() + amount, 1, 12, 0, 0, 0)
-}
-
-function isBeforeDay(a, b) {
-  return a.getTime() < b.getTime()
-}
-
-function isAfterDay(a, b) {
-  return a.getTime() > b.getTime()
-}
-
-function isDisabled(date) {
-  if (minDateObj.value && isBeforeDay(date, minDateObj.value)) return true
-  if (maxDateObj.value && isAfterDay(date, maxDateObj.value)) return true
-  return false
+function addDays(date, amount) {
+  const value = new Date(date)
+  value.setDate(value.getDate() + amount)
+  return value
 }
 
 const days = computed(() => {
-  const monthStart = startOfMonth(viewDate.value)
-  const firstDay = monthStart.getDay() === 0 ? 7 : monthStart.getDay()
-  const gridStart = new Date(monthStart)
-  gridStart.setDate(monthStart.getDate() - (firstDay - 1))
+  const year = viewDate.value.getFullYear()
+  const month = viewDate.value.getMonth()
+  const first = new Date(year, month, 1)
+  const mondayOffset = first.getDay() === 0 ? 6 : first.getDay() - 1
+  const start = addDays(first, -mondayOffset)
 
-  const result = []
-
-  for (let index = 0; index < 42; index += 1) {
-    const date = new Date(gridStart)
-    date.setDate(gridStart.getDate() + index)
-
-    result.push({
-      key: formatYmd(date),
-      label: date.getDate(),
-      date,
-      currentMonth: date.getMonth() === viewDate.value.getMonth(),
-      today: sameDay(date, today.value),
-      selected: sameDay(date, selectedDate.value),
-      disabled: isDisabled(date),
-    })
-  }
-
-  return result
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = addDays(start, index)
+    const key = keyFor(date)
+    return {
+      key,
+      day: date.getDate(),
+      currentMonth: date.getMonth() === month,
+      today: key === keyFor(today),
+      selected: key === props.modelValue,
+      disabled:
+        Boolean(effectiveMin.value && key < effectiveMin.value)
+        || Boolean(effectiveMax.value && key > effectiveMax.value),
+    }
+  })
 })
+
+function canMoveTo(date) {
+  const first = keyFor(new Date(date.getFullYear(), date.getMonth(), 1))
+  const last = keyFor(new Date(date.getFullYear(), date.getMonth() + 1, 0))
+  if (effectiveMax.value && first > effectiveMax.value) return false
+  if (effectiveMin.value && last < effectiveMin.value) return false
+  return true
+}
+
+function moveMonth(amount) {
+  const target = new Date(
+    viewDate.value.getFullYear(),
+    viewDate.value.getMonth() + amount,
+    1,
+  )
+  if (canMoveTo(target)) viewDate.value = target
+}
+
+function chooseMonth(month) {
+  const target = new Date(viewDate.value.getFullYear(), month, 1)
+  if (canMoveTo(target)) viewDate.value = target
+  monthMenuOpen.value = false
+}
+
+function chooseYear(year) {
+  const target = new Date(year, viewDate.value.getMonth(), 1)
+  if (canMoveTo(target)) {
+    viewDate.value = target
+  } else {
+    const min = parseKey(effectiveMin.value)
+    const max = parseKey(effectiveMax.value)
+    if (min && year === min.getFullYear()) {
+      viewDate.value = new Date(year, min.getMonth(), 1)
+    } else if (max && year === max.getFullYear()) {
+      viewDate.value = new Date(year, max.getMonth(), 1)
+    }
+  }
+  yearMenuOpen.value = false
+}
+
+function chooseDay(day) {
+  if (day.disabled) return
+  emit('update:modelValue', day.key)
+  emit('change', day.key)
+  close()
+}
+
+async function toggleYearMenu() {
+  yearMenuOpen.value = !yearMenuOpen.value
+  monthMenuOpen.value = false
+  if (yearMenuOpen.value) {
+    await nextTick()
+    yearList.value
+      ?.querySelector('[data-current-year="true"]')
+      ?.scrollIntoView({ block: 'center' })
+  }
+}
+
+function toggleMonthMenu() {
+  monthMenuOpen.value = !monthMenuOpen.value
+  yearMenuOpen.value = false
+}
 
 function openPicker() {
   if (props.disabled) return
+  const date = initialDate()
+  viewDate.value = new Date(date.getFullYear(), date.getMonth(), 1)
   open.value = true
-  viewDate.value = selectedDate.value || today.value
 }
 
-function closePicker() {
+function close() {
   open.value = false
+  monthMenuOpen.value = false
+  yearMenuOpen.value = false
 }
 
-function togglePicker() {
-  if (open.value) {
-    closePicker()
-  } else {
-    openPicker()
-  }
+function onDocumentPointerDown(event) {
+  if (root.value && !root.value.contains(event.target)) close()
 }
 
-function selectDate(day) {
-  if (day.disabled) return
-
-  emit('update:modelValue', day.key)
-  closePicker()
+function onKeydown(event) {
+  if (event.key === 'Escape') close()
 }
 
-function clearDate() {
-  emit('update:modelValue', '')
-  closePicker()
-}
-
-function selectToday() {
-  if (isDisabled(today.value)) return
-
-  emit('update:modelValue', formatYmd(today.value))
-  viewDate.value = today.value
-  closePicker()
-}
-
-function previousMonth() {
-  viewDate.value = addMonths(viewDate.value, -1)
-}
-
-function nextMonth() {
-  viewDate.value = addMonths(viewDate.value, 1)
-}
-
-function onDocumentClick(event) {
-  if (!root.value) return
-  if (root.value.contains(event.target)) return
-  closePicker()
-}
-
-function onEscape(event) {
-  if (event.key === 'Escape') {
-    closePicker()
-  }
-}
+watch(
+  () => props.modelValue,
+  (value) => {
+    const date = parseKey(value)
+    if (date && !open.value) {
+      viewDate.value = new Date(date.getFullYear(), date.getMonth(), 1)
+    }
+  },
+)
 
 onMounted(() => {
-  document.addEventListener('mousedown', onDocumentClick)
-  document.addEventListener('keydown', onEscape)
+  document.addEventListener('pointerdown', onDocumentPointerDown)
+  window.addEventListener('keydown', onKeydown)
 })
 
 onBeforeUnmount(() => {
-  document.removeEventListener('mousedown', onDocumentClick)
-  document.removeEventListener('keydown', onEscape)
+  document.removeEventListener('pointerdown', onDocumentPointerDown)
+  window.removeEventListener('keydown', onKeydown)
 })
 </script>
 
 <template>
-  <div ref="root" class="custom-date-picker" :class="{
-      'is-open': open,
-      'is-disabled': disabled,
-      'custom-date-picker--above': placement === 'above',
-    }">
+  <div ref="root" class="custom-date-picker">
     <button
       class="custom-date-picker__trigger"
       type="button"
       :disabled="disabled"
-      @click="togglePicker"
+      :aria-expanded="open"
+      @click="open ? close() : openPicker()"
     >
-      <span :class="['custom-date-picker__value', { 'is-placeholder': !displayValue }]">
-        {{ displayValue || placeholder }}
+      <span :class="{ 'custom-date-picker__placeholder': !modelValue }">
+        {{ modelValue ? displayDate(modelValue) : placeholder }}
       </span>
-
-      <FontAwesomeIcon
-        class="custom-date-picker__icon"
-        :icon="faCalendarDays"
-      />
+      <FontAwesomeIcon :icon="faCalendarDay" />
     </button>
 
-    <div v-if="open" class="custom-date-picker__panel" role="dialog" aria-modal="false">
+    <div v-if="open" class="custom-date-picker__popover">
       <div class="custom-date-picker__header">
-        <div class="custom-date-picker__title">{{ monthLabel }}</div>
+        <button class="custom-date-picker__nav" type="button" aria-label="Previous month" @click="moveMonth(-1)">
+          <FontAwesomeIcon :icon="faChevronLeft" />
+        </button>
 
-        <div class="custom-date-picker__nav">
-          <button type="button" class="custom-date-picker__nav-button" @click="previousMonth">
-            <FontAwesomeIcon :icon="faChevronLeft" />
-          </button>
+        <div class="custom-date-picker__jump">
+          <div class="custom-date-picker__jump-control">
+            <button class="custom-date-picker__jump-button" type="button" @click="toggleMonthMenu">
+              <span>{{ visibleMonth }}</span>
+              <FontAwesomeIcon :icon="faChevronDown" />
+            </button>
+            <div v-if="monthMenuOpen" class="custom-date-picker__menu">
+              <button
+                v-for="(month, index) in months"
+                :key="month"
+                type="button"
+                :class="{ 'custom-date-picker__menu-item--active': index === viewDate.getMonth() }"
+                @click="chooseMonth(index)"
+              >
+                {{ month }}
+              </button>
+            </div>
+          </div>
 
-          <button type="button" class="custom-date-picker__nav-button" @click="nextMonth">
-            <FontAwesomeIcon :icon="faChevronRight" />
-          </button>
+          <div class="custom-date-picker__jump-control">
+            <button class="custom-date-picker__jump-button" type="button" @click="toggleYearMenu">
+              <span>{{ visibleYear }}</span>
+              <FontAwesomeIcon :icon="faChevronDown" />
+            </button>
+            <div
+              v-if="yearMenuOpen"
+              ref="yearList"
+              class="custom-date-picker__menu custom-date-picker__menu--years"
+            >
+              <button
+                v-for="year in years"
+                :key="year"
+                type="button"
+                :data-current-year="year === visibleYear ? 'true' : 'false'"
+                :class="{ 'custom-date-picker__menu-item--active': year === visibleYear }"
+                @click="chooseYear(year)"
+              >
+                {{ year }}
+              </button>
+            </div>
+          </div>
         </div>
+
+        <button class="custom-date-picker__nav" type="button" aria-label="Next month" @click="moveMonth(1)">
+          <FontAwesomeIcon :icon="faChevronRight" />
+        </button>
       </div>
 
-      <div class="custom-date-picker__weekdays">
-        <span v-for="label in weekdayLabels" :key="label">{{ label }}</span>
+      <div class="custom-date-picker__weekdays" aria-hidden="true">
+        <span>Mo</span><span>Tu</span><span>We</span><span>Th</span>
+        <span>Fr</span><span>Sa</span><span>Su</span>
       </div>
 
       <div class="custom-date-picker__grid">
@@ -261,33 +303,17 @@ onBeforeUnmount(() => {
           v-for="day in days"
           :key="day.key"
           type="button"
+          class="custom-date-picker__day"
+          :class="{
+            'custom-date-picker__day--outside': !day.currentMonth,
+            'custom-date-picker__day--today': day.today,
+            'custom-date-picker__day--selected': day.selected,
+            'custom-date-picker__day--disabled': day.disabled,
+          }"
           :disabled="day.disabled"
-          :class="[
-            'custom-date-picker__day',
-            {
-              'is-other-month': !day.currentMonth,
-              'is-today': day.today,
-              'is-selected': day.selected,
-            },
-          ]"
-          @click="selectDate(day)"
+          @click="chooseDay(day)"
         >
-          {{ day.label }}
-        </button>
-      </div>
-
-      <div class="custom-date-picker__footer">
-        <button type="button" class="custom-date-picker__footer-button" @click="clearDate">
-          Clear
-        </button>
-
-        <button
-          type="button"
-          class="custom-date-picker__footer-button custom-date-picker__footer-button--accent"
-          :disabled="isDisabled(today)"
-          @click="selectToday"
-        >
-          Today
+          {{ day.day }}
         </button>
       </div>
     </div>
@@ -295,264 +321,179 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.custom-date-picker {
-  position: relative;
-}
+.custom-date-picker { position: relative; width: 100%; }
 
 .custom-date-picker__trigger {
   display: flex;
+  width: 100%;
+  min-height: 42px;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  width: 100%;
-  min-height: 52px;
-  padding: 0 16px;
-  border: 1px solid #353535;
-  background: #0c0c0d;
-  color: #f3efe9;
+  padding: 0 12px;
+  border: 1px solid #343434;
+  background: #151515;
+  color: #eee9e3;
+  font: inherit;
   text-align: left;
   cursor: pointer;
 }
 
-.custom-date-picker__trigger:hover {
-  border-color: #4a4a4a;
+.custom-date-picker__trigger:hover,
+.custom-date-picker__trigger:focus-visible {
+  border-color: #4b4b4b;
+  outline: 0;
 }
 
-.custom-date-picker__value {
-  font-size: 16px;
-  line-height: 1.2;
-}
+.custom-date-picker__trigger:disabled { cursor: not-allowed; opacity: 0.55; }
+.custom-date-picker__trigger svg { color: #aaa39d; }
+.custom-date-picker__placeholder { color: #77716b; }
 
-.custom-date-picker__value.is-placeholder {
-  color: #7f7b77;
-}
-
-.custom-date-picker__icon {
-  color: #a9a29a;
-  font-size: 16px;
-  flex: 0 0 auto;
-}
-
-.custom-date-picker__panel {
+.custom-date-picker__popover {
   position: absolute;
+  z-index: 1000;
+  top: calc(100% + 6px);
   left: 0;
-  right: auto;
-  top: calc(100% + 8px);
-  bottom: auto;
-  z-index: 50;
-  width: min(100%, 430px);
-  min-width: 320px;
-  padding: 18px 18px 14px;
-  border: 1px solid #353535;
-  background: #141414;
-  box-shadow: 0 24px 50px rgba(0, 0, 0, 0.45);
+  width: 300px;
+  padding: 12px;
+  border: 1px solid #343434;
+  background: #111;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
 }
 
 .custom-date-picker__header {
-  display: flex;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 34px;
+  gap: 7px;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 18px;
-}
-
-.custom-date-picker__title {
-  color: #f3efe9;
-  font-size: 18px;
-  font-weight: 600;
+  margin-bottom: 11px;
 }
 
 .custom-date-picker__nav {
-  display: flex;
-  gap: 8px;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid #303030;
+  background: #151515;
+  color: #d8d3cd;
+  cursor: pointer;
 }
 
-.custom-date-picker__nav-button {
-  display: grid;
-  place-items: center;
-  width: 46px;
-  height: 46px;
-  border: 1px solid #353535;
-  background: #121212;
-  color: #d7d1ca;
+.custom-date-picker__nav:hover { border-color: #4b4b4b; color: #fff; }
+
+.custom-date-picker__jump {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.custom-date-picker__jump-control { position: relative; min-width: 0; }
+
+.custom-date-picker__jump-button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: #eee9e3;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
   cursor: pointer;
+}
+
+.custom-date-picker__jump-button:hover { background: #181818; }
+.custom-date-picker__jump-button svg { width: 9px; color: #817b75; }
+
+.custom-date-picker__menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 50%;
+  width: 142px;
+  max-height: 228px;
+  overflow-y: auto;
+  transform: translateX(-50%);
+  border: 1px solid #343434;
+  background: #151515;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.55);
+}
+
+.custom-date-picker__menu--years { width: 96px; }
+
+.custom-date-picker__menu button {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-bottom: 1px solid #292929;
+  background: transparent;
+  color: #aaa39d;
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.custom-date-picker__menu button:last-child { border-bottom: 0; }
+
+.custom-date-picker__menu button:hover,
+.custom-date-picker__menu-item--active {
+  background: #202020 !important;
+  color: #f0ebe5 !important;
 }
 
 .custom-date-picker__weekdays,
 .custom-date-picker__grid {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(7, 1fr);
 }
 
-.custom-date-picker__weekdays {
-  margin-bottom: 10px;
-}
+.custom-date-picker__weekdays { margin-bottom: 4px; }
 
 .custom-date-picker__weekdays span {
   display: grid;
+  height: 25px;
   place-items: center;
-  min-height: 24px;
-  color: #6f6b68;
-  font-size: 13px;
-  font-weight: 600;
+  color: #68635e;
+  font-size: 9px;
+  font-weight: 700;
 }
 
 .custom-date-picker__day {
   display: grid;
+  width: 100%;
+  aspect-ratio: 1;
   place-items: center;
-  min-height: 44px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: #e7e1da;
-  font-size: 15px;
-  cursor: pointer;
-}
-
-.custom-date-picker__day:hover:not(:disabled) {
-  border-color: #4b4039;
-  background: rgba(255, 108, 76, 0.08);
-}
-
-.custom-date-picker__day.is-other-month {
-  color: #595653;
-}
-
-.custom-date-picker__day.is-today {
-  border-color: #6d564c;
-}
-
-.custom-date-picker__day.is-selected {
-  border-color: #ff6c4c;
-  background: rgba(255, 108, 76, 0.14);
-  color: #ffb09d;
-}
-
-.custom-date-picker__day:disabled {
-  color: #464341;
-  cursor: not-allowed;
-}
-
-.custom-date-picker__footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid #2c2c2c;
-}
-
-.custom-date-picker__footer-button {
   border: 0;
   background: transparent;
-  color: #ff8a71;
-  font-size: 15px;
-  font-weight: 600;
+  color: #e9e4de;
+  font: inherit;
+  font-size: 10px;
   cursor: pointer;
 }
 
-.custom-date-picker__footer-button:disabled {
-  color: #575350;
-  cursor: not-allowed;
+.custom-date-picker__day:hover:not(:disabled) { background: #202020; }
+
+.custom-date-picker__day--outside,
+.custom-date-picker__day--disabled { color: #55514d; }
+
+.custom-date-picker__day--disabled { cursor: not-allowed; }
+
+.custom-date-picker__day--today { box-shadow: inset 0 0 0 1px #57514c; }
+
+.custom-date-picker__day--selected {
+  background: #ef5b3f !important;
+  color: #090909 !important;
+  font-weight: 800;
 }
 
-.custom-date-picker.is-disabled .custom-date-picker__trigger {
-  opacity: 0.65;
-  cursor: not-allowed;
+@media (max-width: 480px) {
+  .custom-date-picker__popover { width: min(300px, calc(100vw - 40px)); }
 }
-
-@media (max-width: 640px) {
-  .custom-date-picker__panel {
-    left: 0;
-    right: 0;
-    width: auto;
-    min-width: 0;
-    padding: 16px;
-  }
-
-  .custom-date-picker__nav-button {
-    width: 42px;
-    height: 42px;
-  }
-
-  .custom-date-picker__day {
-    min-height: 40px;
-  }
-}
-
-.custom-date-picker--above .custom-date-picker__panel {
-  top: auto;
-  bottom: calc(100% + 8px);
-}
-
-/* PATCH_43B_UNIFIED_CALENDAR */
-.custom-date-picker__panel {
-  width: 300px !important;
-  max-width: calc(100vw - 40px);
-  padding: 12px !important;
-  border: 1px solid #343434;
-  background: #151515;
-}
-
-.custom-date-picker__panel button {
-  min-height: 30px;
-}
-
-.custom-date-picker__panel button:disabled {
-  color: #4f4b48 !important;
-  opacity: 0.55 !important;
-  cursor: not-allowed !important;
-}
-
-.custom-date-picker__panel button:disabled:hover {
-  border-color: transparent !important;
-  background: transparent !important;
-  color: #4f4b48 !important;
-}
-
-.custom-date-picker__panel [class*="day"]:disabled {
-  color: #4f4b48 !important;
-  opacity: 0.55 !important;
-}
-
-.custom-date-picker__panel [aria-disabled="true"] {
-  color: #4f4b48 !important;
-  opacity: 0.55 !important;
-  pointer-events: none;
-}
-
-.custom-date-picker__panel [class*="outside"] {
-  color: #4a4744 !important;
-}
-
-@media (max-width: 680px) {
-  .custom-date-picker__panel {
-    width: min(300px, calc(100vw - 32px)) !important;
-  }
-}
-
-/* PATCH_43C_DISABLED_DATE_COLOUR */
-.custom-date-picker__panel .custom-date-picker__day--disabled,
-.custom-date-picker__panel .custom-date-picker__day[disabled],
-.custom-date-picker__panel button[disabled],
-.custom-date-picker__panel button:disabled,
-.custom-date-picker__panel [aria-disabled="true"],
-.custom-date-picker__panel [class*="disabled"] {
-  color: #55514d !important;
-  opacity: 0.45 !important;
-  cursor: not-allowed !important;
-  pointer-events: none !important;
-}
-
-.custom-date-picker__panel .custom-date-picker__day--disabled:hover,
-.custom-date-picker__panel button[disabled]:hover,
-.custom-date-picker__panel button:disabled:hover,
-.custom-date-picker__panel [aria-disabled="true"]:hover,
-.custom-date-picker__panel [class*="disabled"]:hover {
-  border-color: transparent !important;
-  background: transparent !important;
-  color: #55514d !important;
-}
-
 </style>

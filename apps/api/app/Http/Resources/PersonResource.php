@@ -4,6 +4,8 @@ namespace App\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class PersonResource extends JsonResource
 {
@@ -33,6 +35,16 @@ class PersonResource extends JsonResource
             'new_starter_allowance_override_days' => $this->new_starter_allowance_override_days !== null
                 ? (float) $this->new_starter_allowance_override_days
                 : null,
+            'imported_allowance_years' => Schema::hasTable('timetastic_allowance_snapshots')
+                ? DB::table('timetastic_allowance_snapshots')
+                    ->where('organisation_id', $this->organisation_id)
+                    ->where('user_id', $this->id)
+                    ->orderBy('year')
+                    ->pluck('year')
+                    ->map(fn ($year) => (int) $year)
+                    ->values()
+                    ->all()
+                : [],
             'carry_over_override' => $this->carry_over_override,
             'carry_over_max_days_override' => $this->carry_over_max_days_override,
             'is_leadership' => $this->relationLoaded('staffingGroups')

@@ -38,6 +38,7 @@ const inviteCopied = ref(false)
 const emailLocal = ref('')
 
 const form = ref(emptyForm())
+const newStarterEnabled = ref(false)
 
 const editing = computed(() => Boolean(props.person?.id))
 
@@ -47,6 +48,21 @@ const futureStartDate = computed(() =>
   Boolean(
     form.value.employment_start_date
     && form.value.employment_start_date > todayKey,
+  ),
+)
+
+const selectedStartYear = computed(() => {
+  const value = form.value.employment_start_date
+  return value ? Number(String(value).slice(0, 4)) : null
+})
+
+const historicalImportedStartYear = computed(() =>
+  Boolean(
+    editing.value
+    && selectedStartYear.value
+    && (props.person?.imported_allowance_years || [])
+      .map(Number)
+      .includes(Number(selectedStartYear.value)),
   ),
 )
 
@@ -142,6 +158,8 @@ function emptyForm() {
 }
 
 function resetForm() {
+  // PATCH_45A_RESET_NEW_STARTER
+  newStarterEnabled.value = false
   if (!props.person) {
     form.value = emptyForm()
     emailLocal.value = ''
@@ -352,6 +370,8 @@ watch(
     () => holidayPolicy.value?.base_allowance_days,
   ],
   () => {
+    if (!newStarterEnabled.value) return
+
     const preview = newStarterAllowancePreview.value
     if (!preview) return
 
@@ -359,6 +379,19 @@ watch(
   },
 )
 
+
+// PATCH_45B_NEW_STARTER_TOGGLE_FILL
+watch(
+  () => newStarterEnabled.value,
+  (enabled) => {
+    if (!enabled) return
+
+    const preview = newStarterAllowancePreview.value
+    if (!preview) return
+
+    form.value.new_starter_allowance_override_days = preview.rounded
+  },
+)
 
 // PATCH_41_INCREMENT_YEAR_SUGGESTION
 watch(
@@ -579,8 +612,31 @@ watch(
                 </span>
               </label>
 
+              <label class="new-starter-toggle">
+                <input v-model="newStarterEnabled" type="checkbox" />
+                <span>
+                  <strong>New starter</strong>
+                  <small>
+                    Check this to review or override their pro-rata first-year holiday allowance.
+                  </small>
+                </span>
+              </label>
+
               <div
-                v-if="newStarterAllowancePreview"
+                v-if="historicalImportedStartYear && !newStarterEnabled"
+                class="historical-allowance-notice"
+              >
+                <div>
+                  <strong>Historical allowance imported from Timetastic</strong>
+                  <span>
+                    {{ selectedStartYear }} entitlement is locked to the migrated record,
+                    so adding this start date will not recalculate historic holiday balances.
+                  </span>
+                </div>
+              </div>
+
+              <div
+                v-if="newStarterEnabled && newStarterAllowancePreview"
                 class="new-starter-calculation"
               >
                 <div class="new-starter-calculation__heading">
@@ -621,7 +677,7 @@ watch(
                 </label>
               </div>
 
-              <label class="field">
+              <label v-if="newStarterEnabled" class="field">
                 <span class="field__label">Automatic +1 starts from year</span>
                 <span class="person-allowance-input">
                   <input
@@ -1226,6 +1282,69 @@ watch(
     width: 100%;
     justify-content: center;
   }
+}
+
+
+.historical-allowance-notice {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid #343434;
+  background: #151515;
+}
+
+.historical-allowance-notice strong,
+.historical-allowance-notice span {
+  display: block;
+}
+
+.historical-allowance-notice strong {
+  margin-bottom: 5px;
+  color: #eee9e3;
+  font-size: 12px;
+}
+
+.historical-allowance-notice span {
+  color: #817b75;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+
+.new-starter-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #343434;
+  background: #151515;
+  cursor: pointer;
+}
+
+.new-starter-toggle input {
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: #ef5b3f;
+  flex: 0 0 16px;
+}
+
+.new-starter-toggle span,
+.new-starter-toggle strong,
+.new-starter-toggle small {
+  display: block;
+}
+
+.new-starter-toggle strong {
+  color: #eee9e3;
+  font-size: 12px;
+}
+
+.new-starter-toggle small {
+  margin-top: 4px;
+  color: #817b75;
+  font-size: 10px;
+  line-height: 1.45;
 }
 
 </style>
