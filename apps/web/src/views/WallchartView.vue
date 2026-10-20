@@ -2080,4 +2080,29 @@ onBeforeUnmount(() => {
   color: #ff8069;
 }
 
+
+/* PATCH_46_WALLCHART_REMAINING_READABILITY */
+.wallchart-person__allowance,
+.wallchart-person__remaining,
+.wallchart-person__balance,
+.wallchart-person__days-left {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  padding: 3px 8px;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .wallchart-person__allowance,
+  .wallchart-person__remaining,
+  .wallchart-person__balance,
+  .wallchart-person__days-left {
+    font-size: 12px !important;
+  }
+}
+
 </style>
