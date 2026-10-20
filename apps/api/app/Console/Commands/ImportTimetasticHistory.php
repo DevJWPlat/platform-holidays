@@ -549,10 +549,13 @@ class ImportTimetasticHistory extends Command
                         . number_format($adjustmentDays, 2),
                 ];
 
-                if (! $commit) {
-                    continue;
-                }
-
+                /*
+                 * In preview mode we still write the temporary reconciliation
+                 * rows inside a database transaction, then roll the whole
+                 * transaction back. That lets later years see the corrected
+                 * carry-over from earlier years, so the preview is truly
+                 * chronological without persisting anything.
+                 */
                 if ($requiredAdjustmentMinutes === 0) {
                     if ($existing) {
                         $existing->delete();
@@ -609,7 +612,13 @@ class ImportTimetasticHistory extends Command
         if ($commit) {
             DB::transaction($runner);
         } else {
-            $runner();
+            DB::beginTransaction();
+
+            try {
+                $runner();
+            } finally {
+                DB::rollBack();
+            }
         }
 
         $this->newLine();
