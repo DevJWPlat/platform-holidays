@@ -34,6 +34,9 @@ class LeaveRequest extends Model
         'reviewed_at',
         'review_note',
         'cancelled_at',
+        'clickup_task_id',
+        'clickup_synced_at',
+        'clickup_sync_error',
     ];
 
     protected function casts(): array
@@ -46,6 +49,7 @@ class LeaveRequest extends Model
             'staffing_override' => 'boolean',
             'reviewed_at' => 'datetime',
             'cancelled_at' => 'datetime',
+            'clickup_synced_at' => 'datetime',
         ];
     }
 

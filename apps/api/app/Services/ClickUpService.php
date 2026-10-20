@@ -144,4 +144,32 @@ class ClickUpService
 
         return null;
     }
+
+
+    public function createTask(array $payload): array
+    {
+        return $this->client()
+            ->post('/list/' . $this->listId() . '/task', $payload)
+            ->throw()
+            ->json();
+    }
+
+    public function updateTask(string $taskId, array $payload): array
+    {
+        return $this->client()
+            ->put('/task/' . $taskId, $payload)
+            ->throw()
+            ->json();
+    }
+
+    public function deleteTask(string $taskId): void
+    {
+        $response = $this->client()->delete('/task/' . $taskId);
+
+        if ($response->status() === 404) {
+            return;
+        }
+
+        $response->throw();
+    }
 }
