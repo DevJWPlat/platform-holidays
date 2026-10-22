@@ -2652,4 +2652,31 @@ onBeforeUnmount(() => {
   }
 }
 
+
+
+/* PATCH_55A_RECENTER_WALLCHART_ICONS */
+.wallchart-leave {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.wallchart-leave__icon {
+  position: static !important;
+  display: block !important;
+  margin: 0 !important;
+  transform: none !important;
+  line-height: 1 !important;
+}
+
+.wallchart-birthday {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.wallchart-birthday svg {
+  margin: 0 !important;
+}
+
 </style>
