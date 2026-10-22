@@ -2679,4 +2679,36 @@ onBeforeUnmount(() => {
   margin: 0 !important;
 }
 
+
+
+/* PATCH_55B_FIX_BIRTHDAY_MARKER */
+.wallchart-birthday {
+  position: absolute !important;
+  z-index: 4 !important;
+  top: 50% !important;
+  left: 50% !important;
+  display: grid !important;
+  width: 26px !important;
+  height: 26px !important;
+  min-width: 26px !important;
+  min-height: 26px !important;
+  place-items: center !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  transform: translate(-50%, -50%) !important;
+  border: 1px solid rgba(239, 91, 63, 0.55) !important;
+  background: #201310 !important;
+  color: #ef5b3f !important;
+  line-height: 1 !important;
+  pointer-events: none !important;
+}
+
+.wallchart-birthday svg {
+  display: block !important;
+  width: 11px !important;
+  height: 11px !important;
+  margin: 0 !important;
+  transform: none !important;
+}
+
 </style>
