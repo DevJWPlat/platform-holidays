@@ -8,6 +8,7 @@ use App\Models\Department;
 use App\Models\StaffingGroup;
 use App\Models\User;
 use App\Services\AllowanceService;
+use App\Services\WholeCompanyGroupBookingService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -46,7 +47,10 @@ class PeopleController extends Controller
         return PersonResource::collection($people);
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(
+        Request $request,
+        WholeCompanyGroupBookingService $wholeCompanyGroupBookingService,
+    ): JsonResponse
     {
         $viewer = $request->user();
         abort_unless($viewer->isAdministrator(), 403);
@@ -54,7 +58,11 @@ class PeopleController extends Controller
         $validated = $this->validatePerson($request);
         $this->validateAllowedDomain($validated['email']);
 
-        $person = DB::transaction(function () use ($viewer, $validated) {
+        $person = DB::transaction(function () use (
+            $viewer,
+            $validated,
+            $wholeCompanyGroupBookingService,
+        ) {
             $person = new User();
 
             $person->forceFill([
@@ -104,6 +112,9 @@ class PeopleController extends Controller
                 $person,
                 (bool) ($validated['is_leadership'] ?? false),
             );
+
+            $wholeCompanyGroupBookingService
+                ->addPersonToCurrentAndFutureBookings($person, $viewer);
 
             return $person;
         });

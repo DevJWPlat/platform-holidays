@@ -1,8 +1,8 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import {
-  faArchive,
   faChevronDown,
+  faTrash,
   faPlus,
   faXmark,
 } from '@fortawesome/free-solid-svg-icons'
@@ -31,6 +31,7 @@ const holidayPolicy = ref({
 const loading = ref(false)
 const saving = ref(false)
 const archiving = ref(false)
+const deleteConfirmOpen = ref(false)
 const error = ref('')
 const createdInviteUrl = ref('')
 const createdPersonName = ref('')
@@ -341,8 +342,18 @@ function finishInvite() {
   emit('close')
 }
 
-async function archivePerson() {
-  if (!editing.value || !window.confirm(`Archive ${props.person.name}?`)) return
+function requestDeletePerson() {
+  if (!editing.value || archiving.value || saving.value) return
+  deleteConfirmOpen.value = true
+}
+
+function closeDeleteConfirm() {
+  if (archiving.value) return
+  deleteConfirmOpen.value = false
+}
+
+async function deletePerson() {
+  if (!editing.value) return
 
   archiving.value = true
   error.value = ''
@@ -350,13 +361,14 @@ async function archivePerson() {
   try {
     await initialiseCsrf()
     await api.post(`/api/v1/people/${props.person.id}/archive`)
+    deleteConfirmOpen.value = false
     emit('archived', props.person.id)
     emit('close')
   } catch (requestError) {
     const errors = requestError.response?.data?.errors
     error.value = errors
       ? Object.values(errors).flat()[0]
-      : requestError.response?.data?.message || 'Could not archive this person.'
+      : requestError.response?.data?.message || 'Could not delete this person.'
   } finally {
     archiving.value = false
   }
@@ -726,10 +738,10 @@ watch(
               class="button button--danger manage-person-archive"
               type="button"
               :disabled="archiving || saving"
-              @click="archivePerson"
+              @click="requestDeletePerson"
             >
-              <FontAwesomeIcon :icon="faArchive" />
-              {{ archiving ? 'Archiving…' : 'Archive person' }}
+              <FontAwesomeIcon :icon="faTrash" />
+              {{ archiving ? 'Deleting…' : 'Delete person' }}
             </button>
 
             <div class="manage-person-modal__footer-actions">
@@ -762,6 +774,72 @@ watch(
       </div>
     </Transition>
   </Teleport>
+
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="deleteConfirmOpen"
+          class="modal-shell"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-person-title"
+        >
+          <button
+            class="modal-shell__backdrop"
+            type="button"
+            aria-label="Close delete confirmation"
+            @click="closeDeleteConfirm"
+          />
+
+          <section class="person-confirm-modal">
+            <header>
+              <div>
+                <div class="eyebrow">DELETE PERSON</div>
+                <h2 id="delete-person-title">Delete {{ props.person?.name }}?</h2>
+              </div>
+
+              <button
+                class="icon-button"
+                type="button"
+                aria-label="Close"
+                :disabled="archiving"
+                @click="closeDeleteConfirm"
+              >
+                <FontAwesomeIcon :icon="faXmark" />
+              </button>
+            </header>
+
+            <div class="person-confirm-modal__body">
+              <p>
+                This removes them from the active team. Their existing holiday and audit history will be kept.
+              </p>
+            </div>
+
+            <footer>
+              <button
+                class="button button--secondary"
+                type="button"
+                :disabled="archiving"
+                @click="closeDeleteConfirm"
+              >
+                Cancel
+              </button>
+
+              <button
+                class="button button--danger"
+                type="button"
+                :disabled="archiving"
+                @click="deletePerson"
+              >
+                <FontAwesomeIcon :icon="faTrash" />
+                {{ archiving ? 'Deleting…' : 'Delete person' }}
+              </button>
+            </footer>
+          </section>
+        </div>
+      </Transition>
+    </Teleport>
+
 </template>
 
 <style scoped>
@@ -1345,6 +1423,106 @@ watch(
   color: #817b75;
   font-size: 10px;
   line-height: 1.45;
+}
+
+
+
+/* PATCH_54_DELETE_PERSON_CONFIRM */
+.person-confirm-modal {
+  position: relative;
+  z-index: 2;
+  width: min(460px, calc(100vw - 32px));
+  border: 1px solid #2e2e2e;
+  background: #111;
+}
+
+.person-confirm-modal > header,
+.person-confirm-modal > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+}
+
+.person-confirm-modal > header {
+  border-bottom: 1px solid #262626;
+}
+
+.person-confirm-modal > footer {
+  justify-content: flex-end;
+  border-top: 1px solid #262626;
+}
+
+.person-confirm-modal h2 {
+  margin: 3px 0 0;
+  color: #eee9e3;
+  font-size: 18px;
+}
+
+.person-confirm-modal__body {
+  padding: 20px;
+}
+
+.person-confirm-modal__body p {
+  margin: 0;
+  color: #918b85;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+@media (max-width: 480px) {
+  .person-confirm-modal > footer {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    padding: 14px;
+  }
+
+  .person-confirm-modal > footer .button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+
+
+/* PATCH_54A_SMALL_DELETE_CONFIRM */
+@media (max-width: 420px) {
+  .person-confirm-modal > header {
+    padding: 15px 16px;
+  }
+
+  .person-confirm-modal h2 {
+    font-size: 16px;
+  }
+
+  .person-confirm-modal > header .eyebrow {
+    font-size: 9px;
+  }
+
+  .person-confirm-modal__body {
+    padding: 16px;
+  }
+
+  .person-confirm-modal__body p {
+    font-size: 10px;
+    line-height: 1.5;
+  }
+
+  .person-confirm-modal > footer {
+    padding: 12px;
+  }
+
+  .person-confirm-modal > footer .button {
+    min-height: 42px;
+    padding: 9px 10px;
+    font-size: 10px;
+    line-height: 1.2;
+  }
+
+  .person-confirm-modal > footer .button svg {
+    font-size: 11px;
+  }
 }
 
 </style>

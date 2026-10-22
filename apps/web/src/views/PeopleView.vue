@@ -2043,4 +2043,95 @@ onMounted(loadPeople)
     flex: 1;
   }
 }
+
+
+/* PATCH_53_PEOPLE_MOBILE_LAYOUT */
+@media (max-width: 720px) {
+  .people-heading {
+    display: flex !important;
+    width: 100%;
+    align-items: stretch !important;
+    flex-direction: column !important;
+    gap: 22px;
+  }
+
+  .people-heading > div:first-child {
+    width: 100%;
+    max-width: none;
+  }
+
+  .people-heading h1,
+  .people-heading p {
+    width: 100%;
+    max-width: none;
+  }
+
+  .people-heading__actions {
+    display: grid !important;
+    width: 100%;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    align-items: stretch !important;
+  }
+
+  .people-heading__count {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .people-heading__actions .button {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+  }
+
+  .person-modal > footer {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 14px !important;
+  }
+
+  .person-modal > footer .button {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+  }
+
+  .department-card {
+    min-height: 0 !important;
+    padding-top: 16px !important;
+    padding-bottom: 16px !important;
+  }
+
+  .department-card__copy,
+  .department-card__limit {
+    padding-top: 2px;
+    padding-bottom: 2px;
+  }
+}
+
+@media (max-width: 400px) {
+  .people-heading__actions {
+    gap: 6px;
+  }
+
+  .people-heading__actions .button {
+    padding-right: 8px;
+    padding-left: 8px;
+    font-size: 10px;
+  }
+
+  .person-modal > footer {
+    gap: 6px;
+    padding: 12px !important;
+  }
+
+  .person-modal > footer .button {
+    padding-right: 8px;
+    padding-left: 8px;
+    font-size: 10px;
+  }
+}
+
 </style>

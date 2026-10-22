@@ -25,6 +25,8 @@ const auth = useAuthStore()
 
 const switcherOpen = ref(false)
 const mobileOpen = ref(false)
+const logoutConfirmOpen = ref(false)
+const loggingOut = ref(false)
 let previousOverflow = ''
 
 const navItems = computed(() => {
@@ -76,10 +78,28 @@ function closeMenus() {
   mobileOpen.value = false
 }
 
-async function logout() {
+function requestLogout() {
   mobileOpen.value = false
-  await auth.logout()
-  await router.replace('/login')
+  logoutConfirmOpen.value = true
+}
+
+function closeLogoutConfirm() {
+  if (loggingOut.value) return
+  logoutConfirmOpen.value = false
+}
+
+async function logout() {
+  if (loggingOut.value) return
+
+  loggingOut.value = true
+
+  try {
+    await auth.logout()
+    logoutConfirmOpen.value = false
+    await router.replace('/login')
+  } finally {
+    loggingOut.value = false
+  }
 }
 
 watch(() => route.fullPath, closeMenus)
@@ -158,7 +178,7 @@ onBeforeUnmount(() => {
             <span class="header-user__name">{{ firstName }}</span>
           </div>
 
-          <button type="button" class="header-signout" @click="logout">
+          <button type="button" class="header-signout" @click="requestLogout">
             <FontAwesomeIcon :icon="faRightFromBracket" />
             <span>Sign out</span>
           </button>
@@ -205,7 +225,7 @@ onBeforeUnmount(() => {
             <button
               type="button"
               class="mobile-menu__item mobile-menu__item--button"
-              @click="logout"
+              @click="requestLogout"
             >
               <FontAwesomeIcon :icon="faRightFromBracket" />
               <span>Sign out</span>
@@ -227,6 +247,60 @@ onBeforeUnmount(() => {
       />
     </Transition>
   </Teleport>
+
+  <Teleport to="body">
+    <Transition name="modal">
+      <div
+        v-if="logoutConfirmOpen"
+        class="modal-shell"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="logout-confirm-title"
+      >
+        <button
+          class="modal-shell__backdrop"
+          type="button"
+          aria-label="Close sign out confirmation"
+          @click="closeLogoutConfirm"
+        />
+
+        <section class="logout-confirm-modal">
+          <header>
+            <div>
+              <div class="eyebrow">SIGN OUT</div>
+              <h2 id="logout-confirm-title">Are you sure you want to log out?</h2>
+            </div>
+          </header>
+
+          <div class="logout-confirm-modal__body">
+            <p>You’ll need to sign in again to access Platform Holidays.</p>
+          </div>
+
+          <footer>
+            <button
+              class="button button--secondary"
+              type="button"
+              :disabled="loggingOut"
+              @click="closeLogoutConfirm"
+            >
+              Cancel
+            </button>
+
+            <button
+              class="button button--primary"
+              type="button"
+              :disabled="loggingOut"
+              @click="logout"
+            >
+              <FontAwesomeIcon :icon="faRightFromBracket" />
+              {{ loggingOut ? 'Signing out…' : 'Sign out' }}
+            </button>
+          </footer>
+        </section>
+      </div>
+    </Transition>
+  </Teleport>
+
 </template>
 
 <style scoped>
@@ -335,4 +409,64 @@ onBeforeUnmount(() => {
     transform: translate(-50%, 0);
   }
 }
+
+
+/* PATCH_54_LOGOUT_CONFIRM */
+.logout-confirm-modal {
+  position: relative;
+  z-index: 2;
+  width: min(460px, calc(100vw - 32px));
+  border: 1px solid #2e2e2e;
+  background: #111;
+}
+
+.logout-confirm-modal > header,
+.logout-confirm-modal > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+}
+
+.logout-confirm-modal > header {
+  border-bottom: 1px solid #262626;
+}
+
+.logout-confirm-modal > footer {
+  justify-content: flex-end;
+  border-top: 1px solid #262626;
+}
+
+.logout-confirm-modal h2 {
+  margin: 3px 0 0;
+  color: #eee9e3;
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.logout-confirm-modal__body {
+  padding: 20px;
+}
+
+.logout-confirm-modal__body p {
+  margin: 0;
+  color: #918b85;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+@media (max-width: 480px) {
+  .logout-confirm-modal > footer {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    padding: 14px;
+  }
+
+  .logout-confirm-modal > footer .button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 </style>

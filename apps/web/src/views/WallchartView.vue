@@ -43,12 +43,18 @@ const confirmDeleteLeave = ref(false)
 const deleteLeaveError = ref('')
 const calendarScroller = ref(null)
 const dragging = ref(false)
+const mobileMode = ref(false)
 
+let mobileMediaQuery = null
 let dragStartX = 0
 let dragStartScrollLeft = 0
 let snapTimer = null
+let dragFrame = null
+let pendingDragLeft = null
+let lastVisibleMonthText = ''
 
 const today = startOfDay(new Date())
+const mobileWeekStart = ref(startOfWeek(today))
 const selectedYear = ref(today.getFullYear())
 const visibleMonthLabel = ref('')
 const canCreateGroupBooking = computed(() =>
@@ -163,7 +169,52 @@ const dates = computed(() => {
 
 const periodLabel = computed(() => String(selectedYear.value))
 
+const displayDates = computed(() => {
+  if (!mobileMode.value) return dates.value
+
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = addDays(mobileWeekStart.value, index)
+    const day = date.getDay()
+
+    return {
+      value: date,
+      key: dateKey(date),
+      day: new Intl.DateTimeFormat('en-GB', { weekday: 'narrow' }).format(date),
+      date: date.getDate(),
+      month: date.getMonth(),
+      weekend: day === 0 || day === 6,
+      today: sameDay(date, today),
+    }
+  })
+})
+
+function setVisibleMonthLabelFromDates(items) {
+  if (!items.length) return
+
+  const startDate = items[0]?.value
+  const endDate = items[items.length - 1]?.value
+  if (!startDate || !endDate) return
+
+  const formatter = new Intl.DateTimeFormat('en-GB', { month: 'long' })
+  const startMonth = formatter.format(startDate)
+  const endMonth = formatter.format(endDate)
+
+  const nextMonthText = startMonth === endMonth
+    ? startMonth
+    : `${startMonth} / ${endMonth}`
+
+  if (nextMonthText !== lastVisibleMonthText) {
+    lastVisibleMonthText = nextMonthText
+    visibleMonthLabel.value = nextMonthText
+  }
+}
+
 function updateVisibleMonthLabel() {
+  if (mobileMode.value) {
+    setVisibleMonthLabelFromDates(displayDates.value)
+    return
+  }
+
   const scroller = calendarScroller.value
 
   if (!scroller || !dates.value.length) {
@@ -503,16 +554,46 @@ async function movePeriodByMonth(amount) {
   await scrollToDate(target, 'smooth')
 }
 
+async function moveMobileWeek(amount) {
+  mobileWeekStart.value = addDays(mobileWeekStart.value, amount * 7)
+
+  const newYear = mobileWeekStart.value.getFullYear()
+  if (selectedYear.value !== newYear) {
+    selectedYear.value = newYear
+  }
+
+  await nextTick()
+  updateVisibleMonthLabel()
+}
+
 async function previousPeriod() {
+  if (mobileMode.value) {
+    await moveMobileWeek(-1)
+    return
+  }
+
   await movePeriodByMonth(-1)
 }
 
 async function nextPeriod() {
+  if (mobileMode.value) {
+    await moveMobileWeek(1)
+    return
+  }
+
   await movePeriodByMonth(1)
 }
 
 async function goToToday() {
   selectedYear.value = today.getFullYear()
+
+  if (mobileMode.value) {
+    mobileWeekStart.value = startOfWeek(today)
+    await nextTick()
+    updateVisibleMonthLabel()
+    return
+  }
+
   await nextTick()
   await scrollToDate(today, 'smooth', 'left')
 }
@@ -523,6 +604,7 @@ function setDepartment(id) {
 }
 
 function onPointerDown(event) {
+  if (mobileMode.value) return
   if (event.pointerType === 'mouse' && event.button !== 0) return
   if (event.target.closest('.wallchart-leave')) return
 
@@ -536,11 +618,24 @@ function onPointerDown(event) {
 }
 
 function onPointerMove(event) {
+  if (mobileMode.value) return
   if (!dragging.value || !calendarScroller.value) return
 
   const distance = event.clientX - dragStartX
-  calendarScroller.value.scrollLeft = dragStartScrollLeft - distance
-  updateVisibleMonthLabel()
+  pendingDragLeft = dragStartScrollLeft - distance
+
+  if (dragFrame !== null) return
+
+  dragFrame = window.requestAnimationFrame(() => {
+    dragFrame = null
+
+    const scroller = calendarScroller.value
+    if (!scroller || pendingDragLeft === null) return
+
+    scroller.scrollLeft = pendingDragLeft
+    pendingDragLeft = null
+    updateVisibleMonthLabel()
+  })
 }
 
 function snapCalendarToDay() {
@@ -558,6 +653,7 @@ function snapCalendarToDay() {
 }
 
 function scheduleSnap() {
+  if (mobileMode.value) return
   if (dragging.value) return
 
   if (snapTimer) {
@@ -573,6 +669,17 @@ function stopDragging(event) {
   if (!dragging.value) return
 
   dragging.value = false
+
+  if (dragFrame !== null) {
+    window.cancelAnimationFrame(dragFrame)
+    dragFrame = null
+  }
+
+  if (pendingDragLeft !== null && calendarScroller.value) {
+    calendarScroller.value.scrollLeft = pendingDragLeft
+    pendingDragLeft = null
+    updateVisibleMonthLabel()
+  }
   calendarScroller.value?.releasePointerCapture?.(event.pointerId)
 
   if (snapTimer) {
@@ -661,7 +768,29 @@ watch(
   },
 )
 
+function syncMobileMode(event) {
+  mobileMode.value = Boolean(event?.matches ?? mobileMediaQuery?.matches)
+
+  if (mobileMode.value) {
+    mobileWeekStart.value = startOfWeek(today)
+    selectedYear.value = mobileWeekStart.value.getFullYear()
+    nextTick(updateVisibleMonthLabel)
+  } else {
+    nextTick(() => {
+      if (selectedYear.value === today.getFullYear()) {
+        scrollToDate(today)
+      } else {
+        updateVisibleMonthLabel()
+      }
+    })
+  }
+}
+
 onMounted(async () => {
+  mobileMediaQuery = window.matchMedia('(max-width: 720px)')
+  syncMobileMode(mobileMediaQuery)
+  mobileMediaQuery.addEventListener?.('change', syncMobileMode)
+
   await loadWallchartData()
 
   if (typeof loadBankHolidays === 'function') {
@@ -679,6 +808,15 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   dragging.value = false
+
+  if (dragFrame !== null) {
+    window.cancelAnimationFrame(dragFrame)
+    dragFrame = null
+  }
+
+  pendingDragLeft = null
+  mobileMediaQuery?.removeEventListener?.('change', syncMobileMode)
+  mobileMediaQuery = null
 
   if (snapTimer) {
     window.clearTimeout(snapTimer)
@@ -875,27 +1013,29 @@ onBeforeUnmount(() => {
 
           <template v-else-if="filteredPeople.length">
             <div v-for="person in filteredPeople" :key="person.id" class="wallchart-person">
-              <div class="wallchart-person__avatar">
-                <img
-                  v-if="person.avatar_url && !person.avatarFailed"
-                  :src="person.avatar_url"
-                  :alt="person.name"
-                  @error="person.avatarFailed = true"
-                />
-                <span v-else>{{ personInitials(person.name) }}</span>
+              <div class="wallchart-person__avatar-wrap">
+                <div class="wallchart-person__avatar">
+                  <img
+                    v-if="person.avatar_url && !person.avatarFailed"
+                    :src="person.avatar_url"
+                    :alt="person.name"
+                    @error="person.avatarFailed = true"
+                  />
+                  <span v-else>{{ personInitials(person.name) }}</span>
+                </div>
+
+                <span
+                  v-if="wallchartAllowanceFor(person.id) !== null"
+                  class="wallchart-person__allowance"
+                  :title="`${formatWallchartAllowance(wallchartAllowanceFor(person.id))} holiday days remaining`"
+                >
+                  {{ formatWallchartAllowance(wallchartAllowanceFor(person.id)) }}
+                </span>
               </div>
 
               <div class="wallchart-person__copy">
                 <div class="wallchart-person__name-row">
                   <strong>{{ person.name }}</strong>
-
-                  <span
-                    v-if="wallchartAllowanceFor(person.id) !== null"
-                    class="wallchart-person__allowance"
-                    :title="`${formatWallchartAllowance(wallchartAllowanceFor(person.id))} holiday days remaining`"
-                  >
-                    {{ formatWallchartAllowance(wallchartAllowanceFor(person.id)) }}d left
-                  </span>
                 </div>
 
                 <span>
@@ -926,7 +1066,7 @@ onBeforeUnmount(() => {
           <div
             ref="calendarScroller"
             class="wallchart__calendar wallchart__calendar--draggable"
-            :style="{ '--wallchart-days': dates.length }"
+            :style="{ '--wallchart-days': displayDates.length }"
             :class="{ 'wallchart__calendar--dragging': dragging }"
             @scroll="() => { updateVisibleMonthLabel(); scheduleSnap() }"
             @pointerdown="onPointerDown"
@@ -937,7 +1077,7 @@ onBeforeUnmount(() => {
           >
             <div class="wallchart__calendar-inner">
             <div class="wallchart__date-header">
-              <div v-for="date in dates"
+              <div v-for="date in displayDates"
                 :key="date.key"
                 class="wallchart-date"
                 :class="{
@@ -958,7 +1098,7 @@ onBeforeUnmount(() => {
                 class="wallchart-grid-row wallchart-grid-row--person"
               >
                 <div
-                  v-for="date in dates"
+                  v-for="date in displayDates"
                   :key="`loading-${row}-${date.key}`"
                   class="wallchart-grid-cell"
                   :class="{
@@ -985,7 +1125,7 @@ onBeforeUnmount(() => {
                 :key="`calendar-${person.id}`"
                 class="wallchart-grid-row wallchart-grid-row--person"
               >
-                <div v-for="date in dates"
+                <div v-for="date in displayDates"
                   :key="`${person.id}-${date.key}`"
                   class="wallchart-grid-cell wallchart-grid-cell--leave"
                   :class="{
@@ -1023,7 +1163,7 @@ onBeforeUnmount(() => {
 
             <div v-else class="wallchart-grid-row wallchart-grid-row--empty">
               <div
-                v-for="date in dates"
+                v-for="date in displayDates"
                 :key="`empty-${date.key}`"
                 class="wallchart-grid-cell"
                 :class="{
@@ -1064,7 +1204,8 @@ onBeforeUnmount(() => {
           Birthday
         </span>
         <span class="wallchart-legend__hint">
-          Drag the calendar left or right to move across the visible dates.
+          <span class="wallchart-legend__desktop-hint">Drag the calendar left or right to move across the visible dates.</span>
+          <span class="wallchart-legend__mobile-hint">Use the arrows above to move seven days at a time.</span>
         </span>
       </div>
     </section>
@@ -1663,12 +1804,15 @@ onBeforeUnmount(() => {
 
 @media (max-width: 720px) {
   .wallchart-filter__popover {
-    position: fixed;
-    top: auto;
-    right: 16px;
-    bottom: 16px;
-    left: 16px;
-    width: auto;
+    position: absolute;
+    z-index: 100;
+    top: calc(100% + 8px);
+    right: auto;
+    bottom: auto;
+    left: 0;
+    width: min(300px, calc(100vw - 32px));
+    max-height: min(420px, calc(100dvh - 140px));
+    overflow-y: auto;
   }
 
   .wallchart-month-heading {
@@ -2102,6 +2246,409 @@ onBeforeUnmount(() => {
   .wallchart-person__balance,
   .wallchart-person__days-left {
     font-size: 12px !important;
+  }
+}
+
+
+
+/* Patch 50 — compact wallchart + fixed seven-day mobile view */
+.wallchart {
+  grid-template-columns: 200px minmax(0, 1fr);
+}
+
+.wallchart-person,
+.wallchart-person--loading,
+.wallchart-grid-row--person,
+.wallchart-grid-cell {
+  height: 58px !important;
+  min-height: 58px !important;
+  max-height: 58px !important;
+}
+
+.wallchart-person,
+.wallchart-person--loading {
+  gap: 8px;
+  padding: 7px 9px;
+}
+
+.wallchart-person__avatar-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.wallchart-person__avatar {
+  width: 34px;
+  height: 34px;
+  flex-basis: 34px;
+  border-radius: 50%;
+}
+
+.wallchart-person__allowance {
+  position: absolute;
+  z-index: 3;
+  top: -7px;
+  left: -7px;
+  display: grid !important;
+  min-width: 22px !important;
+  height: 22px !important;
+  min-height: 22px !important;
+  place-items: center;
+  padding: 0 4px !important;
+  border: 1px solid #050505;
+  border-radius: 999px;
+  background: #9fd356 !important;
+  color: #0a0a0a !important;
+  font-size: 9px !important;
+  font-weight: 800 !important;
+  line-height: 1 !important;
+}
+
+.wallchart-person__copy {
+  gap: 2px;
+}
+
+.wallchart-person__copy strong {
+  font-size: 10px;
+}
+
+.wallchart-person__copy > span {
+  font-size: 8px;
+}
+
+.wallchart__people-heading {
+  height: 66px;
+  padding: 10px 12px;
+}
+
+.wallchart__date-header {
+  height: 66px;
+}
+
+.wallchart__people-month-spacer {
+  height: 54px;
+  flex-basis: 54px;
+}
+
+.wallchart-legend__mobile-hint {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .page-heading {
+    display: block;
+    width: 100%;
+    padding-bottom: 24px;
+  }
+
+  .page-heading > div:first-child {
+    width: 100%;
+  }
+
+  .page-heading h1,
+  .page-heading p {
+    max-width: none;
+  }
+
+  .wallchart-heading__actions {
+    display: grid;
+    width: 100%;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-top: 22px;
+  }
+
+  .wallchart-heading__actions .button,
+  .page-heading__action {
+    display: inline-flex !important;
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+  }
+
+  .wallchart-heading__actions:has(.wallchart-group-booking-button) {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .wallchart {
+    grid-template-columns: 118px minmax(0, 1fr);
+  }
+
+  .wallchart-person,
+  .wallchart-person--loading {
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .wallchart-person__avatar {
+    width: 30px;
+    height: 30px;
+    flex-basis: 30px;
+  }
+
+  .wallchart-person__allowance {
+    top: -6px;
+    left: -5px;
+    min-width: 20px !important;
+    width: auto !important;
+    height: 20px !important;
+    min-height: 20px !important;
+    padding: 0 4px !important;
+    font-size: 8px !important;
+  }
+
+  .wallchart-person__copy strong {
+    font-size: 9px;
+  }
+
+  .wallchart-person__copy > span {
+    font-size: 7px;
+  }
+
+  .wallchart__people-heading {
+    height: 56px;
+    padding: 8px;
+  }
+
+  .wallchart__people-heading strong {
+    font-size: 11px;
+  }
+
+  .wallchart__people-heading span {
+    margin-top: 3px;
+    font-size: 9px;
+  }
+
+  .wallchart__people-month-spacer {
+    height: 44px;
+    flex-basis: 44px;
+  }
+
+  .wallchart-month-heading {
+    height: 44px;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 9px;
+    white-space: nowrap;
+  }
+
+  .wallchart-month-heading strong {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 14px;
+    line-height: 1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .wallchart-month-heading span {
+    flex: 0 0 auto;
+    font-size: 9px;
+  }
+
+  .wallchart__date-header {
+    height: 56px;
+  }
+
+  .wallchart__calendar--draggable {
+    overflow-x: hidden !important;
+    cursor: default;
+    touch-action: pan-y;
+    scroll-snap-type: none;
+  }
+
+  .wallchart__calendar-inner,
+  .wallchart__date-header,
+  .wallchart-grid-row {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .wallchart__date-header,
+  .wallchart-grid-row {
+    grid-template-columns: repeat(7, minmax(0, 1fr)) !important;
+    grid-auto-columns: minmax(0, 1fr) !important;
+  }
+
+  .wallchart-date,
+  .wallchart-grid-cell {
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+  }
+
+  .wallchart-date {
+    padding-top: 9px;
+  }
+
+  .wallchart-date span {
+    font-size: 8px;
+  }
+
+  .wallchart-date strong {
+    margin-top: 5px;
+    font-size: 10px;
+  }
+
+  .wallchart-date--today::after {
+    inset: 4px;
+  }
+
+  .wallchart-leave__icon {
+    font-size: 11px;
+  }
+
+  .wallchart-toolbar {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .wallchart-toolbar__left,
+  .wallchart-toolbar__right {
+    gap: 6px;
+  }
+
+  .wallchart-toolbar .button--compact {
+    min-height: 36px;
+    padding: 7px 10px;
+    font-size: 11px;
+  }
+
+  .wallchart-toolbar .icon-button {
+    width: 36px;
+    height: 36px;
+  }
+
+  .wallchart-legend__desktop-hint {
+    display: none;
+  }
+
+  .wallchart-legend__mobile-hint {
+    display: inline;
+  }
+}
+
+
+
+/* Patch 50B — tighter small-mobile wallchart controls */
+@media (max-width: 720px) {
+  .wallchart-person__avatar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .wallchart-person__allowance {
+    position: static;
+    min-width: 20px !important;
+    height: 20px !important;
+    min-height: 20px !important;
+    flex: 0 0 auto;
+    padding: 0 4px !important;
+    border-color: #050505;
+    font-size: 8px !important;
+    transform: none;
+  }
+}
+
+@media (max-width: 400px) {
+  .wallchart-heading__actions {
+    gap: 6px;
+  }
+
+  .wallchart-heading__actions .button {
+    min-height: 44px;
+    gap: 7px;
+    padding: 9px 10px;
+    font-size: 11px;
+    line-height: 1.15;
+  }
+
+  .wallchart-heading__actions .button svg {
+    font-size: 12px;
+  }
+
+  .wallchart-person,
+  .wallchart-person--loading {
+    padding-right: 5px;
+    padding-left: 5px;
+  }
+
+  .wallchart-person__avatar-wrap {
+    gap: 3px;
+  }
+
+  .wallchart-person__copy strong {
+    font-size: 8.5px;
+  }
+
+  .wallchart-person__copy > span {
+    font-size: 6.5px;
+  }
+}
+
+
+
+/* PATCH_51A_MOBILE_FILTER_ANCHOR */
+@media (max-width: 720px) {
+  .wallchart-toolbar {
+    position: relative !important;
+    overflow: visible !important;
+  }
+
+  .wallchart-filter {
+    position: static !important;
+  }
+
+  .wallchart-filter__popover {
+    position: absolute !important;
+    z-index: 200 !important;
+    top: calc(100% + 8px) !important;
+    right: 10px !important;
+    bottom: auto !important;
+    left: 10px !important;
+    width: auto !important;
+    max-height: min(420px, calc(100dvh - 180px)) !important;
+    overflow-y: auto !important;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55) !important;
+  }
+}
+
+
+
+/* PATCH_55_SMOOTHER_DESKTOP_WALLCHART */
+@media (min-width: 721px) {
+  .wallchart__calendar--draggable {
+    contain: layout paint;
+    overscroll-behavior-x: contain;
+    scrollbar-gutter: stable;
+    will-change: scroll-position;
+  }
+
+  .wallchart__calendar-inner {
+    contain: layout style;
+  }
+
+  .wallchart-grid-row,
+  .wallchart__date-header {
+    contain: layout paint style;
+  }
+
+  .wallchart-grid-cell,
+  .wallchart-date {
+    contain: layout paint;
+  }
+
+  .wallchart__calendar--draggable.is-dragging,
+  .wallchart__calendar--draggable:active {
+    cursor: grabbing;
+    user-select: none;
+  }
+
+  .wallchart-leave,
+  .wallchart-leave__icon,
+  .wallchart-birthday {
+    transform: translateZ(0);
+    backface-visibility: hidden;
   }
 }
 

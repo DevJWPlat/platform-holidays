@@ -13,6 +13,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons'
 import api, { initialiseCsrf } from '@/api/client'
 import { getLeaveTypeIcon } from '@/utils/leaveTypeIcons'
+import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps({
   requestRefreshKey: {
@@ -23,6 +24,7 @@ const props = defineProps({
 
 defineEmits(['book-time-off'])
 
+const auth = useAuthStore()
 const requests = ref([])
 const people = ref([])
 const allowance = ref(null)
@@ -274,10 +276,21 @@ function birthdaysForDay(day) {
   const monthDay = String(day || '').slice(5, 10)
   if (!monthDay) return []
 
-  return people.value.filter(
-    (person) => person?.date_of_birth
-      && String(person.date_of_birth).slice(5, 10) === monthDay,
+  const currentUserId = Number(auth.user?.id || 0)
+  if (!currentUserId) return []
+
+  const person = people.value.find(
+    (item) => Number(item?.id || 0) === currentUserId,
   )
+
+  if (
+    !person?.date_of_birth
+    || String(person.date_of_birth).slice(5, 10) !== monthDay
+  ) {
+    return []
+  }
+
+  return [person]
 }
 
 function birthdayNames(day) {
@@ -304,6 +317,8 @@ function requestStyle(item, day) {
 
   return {
     '--leave-colour': item.leave_type?.colour || '#ef5b3f',
+    '--leave-icon-colour':
+      item.leave_type?.icon_colour === 'black' ? '#090909' : '#ffffff',
     left: `${left}%`,
     right: `${right}%`,
   }
@@ -708,9 +723,10 @@ onMounted(loadBankHolidays)
                 type="button"
                 @click="openRequest(item)"
               >
-                <span>
-                  {{ item.leave_type?.label || 'Time off' }}
-                </span>
+                <FontAwesomeIcon
+                  class="my-calendar-leave__icon"
+                  :icon="getLeaveTypeIcon(item.leave_type?.icon)"
+                />
               </button>
             </div>
           </div>
@@ -1981,4 +1997,27 @@ onMounted(loadBankHolidays)
     display: none;
   }
 }
+
+
+/* PATCH_52_MY_CALENDAR_ICON_ONLY */
+.my-calendar-leave-event {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+}
+
+.my-calendar-leave__icon {
+  display: block !important;
+  color: var(--leave-icon-colour, #ffffff) !important;
+  font-size: 15px !important;
+  line-height: 1;
+  pointer-events: none;
+}
+
+@media (max-width: 680px) {
+  .my-calendar-leave__icon {
+    font-size: 12px !important;
+  }
+}
+
 </style>

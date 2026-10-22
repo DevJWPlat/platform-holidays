@@ -491,4 +491,62 @@ watch(
   }
 }
 
+
+/* PATCH_51_SQUARE_GROUP_BOOKING_MODAL */
+.group-booking-modal,
+.group-booking-modal > header,
+.group-booking-modal > footer,
+.group-booking-modal__body,
+.group-booking-row,
+.group-booking-input,
+.group-booking-person,
+.group-booking-error,
+.group-booking-loading,
+.group-booking-empty {
+  border-radius: 0 !important;
+}
+
+.group-booking-modal :deep(.custom-select),
+.group-booking-modal :deep(.custom-select__trigger),
+.group-booking-modal :deep(.custom-date-picker),
+.group-booking-modal :deep(.custom-date-picker__trigger),
+.group-booking-modal :deep(.custom-date-picker__panel) {
+  border-radius: 0 !important;
+}
+
+
+
+/* PATCH_51A_FORCE_SQUARE_MODAL */
+.group-booking-modal,
+.group-booking-modal *,
+.group-booking-modal::before,
+.group-booking-modal::after {
+  border-radius: 0 !important;
+}
+
+.group-booking-modal :deep(*) {
+  border-radius: 0 !important;
+}
+
+
+
+/* PATCH_51B_TRUE_SQUARE_CLOSE_BUTTON */
+.group-booking-modal > header .icon-button {
+  width: 40px !important;
+  min-width: 40px !important;
+  max-width: 40px !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  max-height: 40px !important;
+  flex: 0 0 40px !important;
+  padding: 0 !important;
+  aspect-ratio: 1 / 1 !important;
+  border-radius: 0 !important;
+}
+
+.group-booking-modal > header .icon-button svg {
+  width: 14px !important;
+  height: 14px !important;
+}
+
 </style>
