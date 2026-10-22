@@ -175,10 +175,22 @@ const yearMonths = computed(() =>
   }),
 )
 
+const approvedYearRequests = computed(() => {
+  const year = currentMonth.value.getFullYear()
+  const yearStart = `${year}-01-01`
+  const yearEnd = `${year}-12-31`
+
+  return requests.value.filter((item) =>
+    item.status === 'approved'
+    && item.starts_on <= yearEnd
+    && item.ends_on >= yearStart
+  )
+})
+
 const nonHolidayStats = computed(() => {
   const grouped = new Map()
 
-  for (const item of activeRequests.value) {
+  for (const item of approvedYearRequests.value) {
     if (item.leave_type?.is_protected_holiday) continue
 
     const label = item.leave_type?.label || 'Time off'
@@ -227,7 +239,7 @@ const monthlyTimeOff = computed(() => {
   const year = currentMonth.value.getFullYear()
   const totals = Array.from({ length: 12 }, () => 0)
 
-  for (const item of activeRequests.value) {
+  for (const item of approvedYearRequests.value) {
     if (item.leave_type?.is_protected_holiday) continue
 
     const cursor = new Date(String(item.starts_on) + 'T12:00:00')
